@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 actor CompletionNotifier {
   func requestAuthorization() async -> Bool {
@@ -9,9 +9,6 @@ actor CompletionNotifier {
 
   func send(filename: String, preset: String) async {
     let center = UNUserNotificationCenter.current()
-    let settings = await center.notificationSettings()
-    guard settings.authorizationStatus == .authorized else { return }
-
     let content = UNMutableNotificationContent()
     content.title = "Eucrante finished saving"
     content.body = "\(filename) · \(preset)"
