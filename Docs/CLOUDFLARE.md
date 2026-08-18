@@ -68,6 +68,7 @@ The deployable package lives in `Backend/` and currently provides:
 
 - a versioned discovery document at `/.well-known/eucrante`;
 - job creation plus private resolution persistence;
+- the namespaced Cobalt control API and its signed root `/tunnel` media route;
 - direct streaming and multipart R2 uploads;
 - conditional and byte-range artifact downloads;
 - explicit deletion of every object under one opaque job prefix;

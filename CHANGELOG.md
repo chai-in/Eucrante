@@ -4,6 +4,10 @@ All notable changes will be documented in this file. The project follows [Semant
 
 ## Unreleased
 
+### Fixed
+
+- Forward Cobalt's signed root `/tunnel` URLs to the private container instead of returning a Worker 404.
+
 ### Added
 
 - Native SwiftUI application shell and typed Cobalt v11 client.

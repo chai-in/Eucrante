@@ -1,4 +1,5 @@
 import { CobaltContainer } from "./cobalt-container";
+import { cobaltUpstreamPath, isCobaltProxyPath } from "./cobalt-routing";
 import type { CompleteUploadBody, JobArtifact, JobManifest } from "./contracts";
 import { json, problem, readJSON, readResponseJSON } from "./http";
 import { artifactKey, deleteJob, getManifest, putManifest, resolutionKey } from "./storage";
@@ -113,7 +114,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
     return methodNotAllowed("POST, PUT, DELETE");
   }
 
-  if (url.pathname === "/v1/cobalt" || url.pathname.startsWith("/v1/cobalt/")) {
+  if (isCobaltProxyPath(url.pathname)) {
     return proxyToCobalt(request, env);
   }
 
@@ -298,9 +299,7 @@ async function abortMultipart(
 
 async function proxyToCobalt(request: Request, env: Env): Promise<Response> {
   const publicURL = new URL(request.url);
-  const path = publicURL.pathname.startsWith("/v1/cobalt")
-    ? publicURL.pathname.slice("/v1/cobalt".length) || "/"
-    : "/";
+  const path = cobaltUpstreamPath(publicURL.pathname);
   const upstreamURL = new URL(`http://cobalt${path}${publicURL.search}`);
   const headers = new Headers(request.headers);
   for (const name of [
