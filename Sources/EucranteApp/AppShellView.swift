@@ -36,6 +36,29 @@ struct AppShellView: View {
         }
       }
     }
+    .safeAreaInset(edge: .bottom) {
+      if let status = model.statusMessage {
+        HStack(spacing: 10) {
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+          Text(status)
+            .font(.callout)
+            .lineLimit(2)
+          Spacer()
+          Button {
+            model.statusMessage = nil
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+      }
+    }
     .alert(
       "Couldn’t Save",
       isPresented: Binding(

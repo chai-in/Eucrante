@@ -1,4 +1,4 @@
-.PHONY: check test build app clean
+.PHONY: check test build app notarize clean
 
 check:
 	swift format lint --recursive Sources Tests Package.swift
@@ -12,6 +12,9 @@ build:
 
 app:
 	./Scripts/build-app.sh release
+
+notarize: app
+	./Scripts/notarize-app.sh
 
 clean:
 	swift package clean

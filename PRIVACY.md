@@ -21,11 +21,11 @@ The configured Worker and Container may return direct or proxied download URLs. 
 
 ## Data the app does not access
 
-The app does not import browser cookies, access private or DRM-protected media, or inspect an Apple Music library. It uploads job artifacts only to the R2 bucket configured by that user; there is no project-operated storage. Future Apple Music import support will require a separate, visible permission and privacy review before release.
+The app does not import browser cookies, access private or DRM-protected media, or inspect an Apple Music library. It uploads job artifacts only to the R2 bucket configured by that user; there is no project-operated storage. When the user explicitly chooses **Import to Music** for a verified audio file, Eucrante asks macOS for Music Automation permission and sends only that local file to the Music app. It does not read the library.
 
 ## Diagnostics
 
-The current build does not transmit diagnostics. Planned diagnostics exports will be local, user-initiated, and redacted by default.
+The app does not transmit diagnostics. Diagnostics export is local, user-initiated, and redacted: it includes app/OS versions, configuration capability flags, preference values, and aggregate job states, but excludes source links, filenames, local paths, credentials, and media.
 
 ## Contact
 

@@ -8,6 +8,7 @@ struct EucranteApp: App {
     WindowGroup {
       AppShellView(model: model)
         .frame(minWidth: 680, minHeight: 460)
+        .onOpenURL { model.handleIncomingURL($0) }
     }
     .defaultSize(width: 820, height: 560)
     .commands {
@@ -27,7 +28,7 @@ struct EucranteApp: App {
 
     Settings {
       SettingsView(model: model)
-        .frame(width: 560, height: 420)
+        .frame(width: 600, height: 500)
     }
   }
 }

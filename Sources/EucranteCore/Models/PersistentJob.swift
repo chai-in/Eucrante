@@ -1,0 +1,98 @@
+import Foundation
+
+public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
+  public enum State: String, Codable, CaseIterable, Sendable {
+    case queued
+    case resolving
+    case awaitingSelection
+    case downloading
+    case processing
+    case verifying
+    case uploading
+    case completed
+    case failed
+    case cancelled
+
+    public var isActive: Bool {
+      switch self {
+      case .queued, .resolving, .downloading, .processing, .verifying, .uploading: true
+      case .awaitingSelection, .completed, .failed, .cancelled: false
+      }
+    }
+  }
+
+  public let id: UUID
+  public var cloudID: UUID?
+  public let sourceURL: URL
+  public let preset: EucrantePreset
+  public var state: State
+  public var progress: Double?
+  public var bytesCompleted: Int64?
+  public var bytesExpected: Int64?
+  public var filename: String?
+  public var outputPath: String?
+  public var stagingPath: String?
+  public var resumeData: Data?
+  public var errorCode: String?
+  public var errorMessage: String?
+  public var mediaDecision: MediaDecision?
+  public var multipartUpload: EucranteMultipartState?
+  public var importedToMusic: Bool
+  public var createdAt: Date
+  public var updatedAt: Date
+
+  public init(
+    id: UUID = UUID(),
+    cloudID: UUID? = nil,
+    sourceURL: URL,
+    preset: EucrantePreset,
+    state: State = .queued,
+    progress: Double? = nil,
+    bytesCompleted: Int64? = nil,
+    bytesExpected: Int64? = nil,
+    filename: String? = nil,
+    outputPath: String? = nil,
+    stagingPath: String? = nil,
+    resumeData: Data? = nil,
+    errorCode: String? = nil,
+    errorMessage: String? = nil,
+    mediaDecision: MediaDecision? = nil,
+    multipartUpload: EucranteMultipartState? = nil,
+    importedToMusic: Bool = false,
+    createdAt: Date = .now,
+    updatedAt: Date = .now
+  ) {
+    self.id = id
+    self.cloudID = cloudID
+    self.sourceURL = sourceURL
+    self.preset = preset
+    self.state = state
+    self.progress = progress
+    self.bytesCompleted = bytesCompleted
+    self.bytesExpected = bytesExpected
+    self.filename = filename
+    self.outputPath = outputPath
+    self.stagingPath = stagingPath
+    self.resumeData = resumeData
+    self.errorCode = errorCode
+    self.errorMessage = errorMessage
+    self.mediaDecision = mediaDecision
+    self.multipartUpload = multipartUpload
+    self.importedToMusic = importedToMusic
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+  }
+
+  public var outputURL: URL? { outputPath.map(URL.init(fileURLWithPath:)) }
+  public var sourceHost: String { sourceURL.host() ?? "Unknown source" }
+}
+
+public struct JobLibrarySnapshot: Codable, Equatable, Sendable {
+  public var schemaVersion: Int
+  public var jobs: [PersistentJob]
+
+  public init(schemaVersion: Int = 1, jobs: [PersistentJob] = []) {
+    self.schemaVersion = schemaVersion
+    self.jobs = jobs
+  }
+}

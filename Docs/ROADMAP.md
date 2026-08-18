@@ -1,6 +1,12 @@
 # Delivery roadmap
 
-## Phase 0 — Foundation (current)
+## Current implementation snapshot
+
+Delivered in the development branch: the native SwiftUI shell, bring-your-own Cloudflare Worker/Container/R2 stack, WARP or service-token access, persistent local jobs, folder bookmarks, progress/cancel/retry, retained-cloud deletion, one-click preset policy and verification, filename previews, explicit Music import, redacted diagnostics, a custom URL scheme, and Developer ID/notarization scripts.
+
+Remaining before a public beta: broader local-processing response coverage, gallery multi-select and Quick Look, licensed golden-media tests across SDR/HDR and multichannel audio, notification/Dock integrations, app identity assets, clean-machine permission testing, and an actual Developer ID notarized artifact. Share/Shortcuts extensions and a signed update feed remain later integrations.
+
+## Phase 0 — Foundation
 
 - Product definition, decision record, system design, and UI specification.
 - Swift package with `EucranteCore`, `EucranteApp`, and tests.

@@ -81,8 +81,20 @@ struct SettingsView: View {
       Section("Filenames and tags") {
         Picker("Filename style", selection: $model.preferences.filenameStyle) {
           ForEach(FilenameStyle.allCases) { style in
-            Text(style.rawValue.capitalized).tag(style)
+            Text(style.displayName).tag(style)
           }
+        }
+        LabeledContent("Preview") {
+          VStack(alignment: .trailing, spacing: 3) {
+            Text(model.preferences.filenameStyle.sampleFilename)
+              .font(.system(.body, design: .monospaced))
+              .lineLimit(1)
+              .truncationMode(.middle)
+            Text(model.preferences.filenameStyle.explanation)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .animation(.easeInOut(duration: 0.15), value: model.preferences.filenameStyle)
         }
         Toggle("Disable embedded metadata", isOn: $model.preferences.disableMetadata)
       }
@@ -99,14 +111,21 @@ struct SettingsView: View {
     Form {
       Section("Downloads") {
         LabeledContent("Destination") {
-          Text(model.destinationDirectory.path(percentEncoded: false))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
+          HStack {
+            Text(model.destinationDirectory.path(percentEncoded: false))
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+            Button("Choose…") { model.chooseDestinationDirectory() }
+          }
         }
-        Text("A user-selected folder with sandbox-safe access will be added in Phase 1.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        Stepper(
+          "Up to \(model.maximumConcurrentJobs) simultaneous saves",
+          value: $model.maximumConcurrentJobs,
+          in: 1...4
+        )
+        Toggle("Notify when saves finish", isOn: $model.completionNotificationsEnabled)
+        Button("Use Default Downloads Folder") { model.resetDestinationDirectory() }
       }
     }
     .formStyle(.grouped)
@@ -143,6 +162,8 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
         }
+
+        Button("Export Diagnostics…") { model.exportDiagnostics() }
       }
 
       Section("Behavior") {
@@ -170,7 +191,11 @@ struct SettingsView: View {
       Section("Data") {
         Label("No analytics or advertising SDKs", systemImage: "checkmark.shield")
         Label("Cloudflare Access credentials are stored in macOS Keychain", systemImage: "key")
-        Label("Source links remain in memory for this session", systemImage: "memorychip")
+        Label("Job history is stored only on this Mac", systemImage: "internaldrive")
+        Label(
+          "Diagnostics exclude source links and credentials", systemImage: "doc.badge.gearshape")
+        Button("Clear Completed History", role: .destructive) { model.clearHistory() }
+          .disabled(model.historyJobs.isEmpty)
       }
       Section {
         Text(

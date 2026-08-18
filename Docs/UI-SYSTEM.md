@@ -16,8 +16,7 @@ Main window
 │   └── Save action
 ├── Queue
 │   ├── Active
-│   └── Completed this session
-└── History (Phase 1)
+│   └── Persistent recent history
 
 Settings window
 ├── General
@@ -61,6 +60,8 @@ When a URL is submitted, the central card remains in place and communicates `Res
 Each preset button includes a short secondary label: `Original/ALAC`, `AAC 256`, `Preserve/HEVC`, or `Smaller HEVC`. Advanced controls are disclosed behind **Custom options**. Changing one relabels the selection as **Custom** so the interface never claims that a modified job still follows a named preset.
 
 Completed Music jobs show **Import to Music** only after output verification. Import does not run automatically and its first use explains the macOS Automation permission before triggering the system prompt.
+
+Metadata Settings shows an illustrative sample filename directly below the filename-style picker. The example and one-line explanation update immediately when Classic, Pretty, Basic, or Nerdy is selected; the preview uses monospaced text and truncates in the middle rather than hiding the extension.
 
 ## Queue wireframe
 

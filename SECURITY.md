@@ -93,8 +93,8 @@ permission to assess.
 ## Known alpha limitations
 
 - No signed and notarized public release exists yet.
-- The sandbox, entitlement, and automatic-update designs are not finalized.
-- Local media conversion and Music automation are not implemented.
+- Developer ID distribution is the current target; the hardened-runtime Music Automation entitlement is defined, while automatic updates remain intentionally disabled until a release signing key and feed policy exist.
+- Local media conversion and explicit Music import are implemented but still need broader licensed golden-media and clean-machine permission testing.
 - Queue history is currently held only for the active session.
 - The Swift client does not yet resume R2 multipart state after relaunch.
 - Public release provenance and reproducible-build automation remain Phase 1

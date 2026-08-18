@@ -109,6 +109,33 @@ public enum FilenameStyle: String, Codable, CaseIterable, Identifiable, Sendable
   case nerdy
 
   public var id: Self { self }
+
+  public var displayName: String {
+    switch self {
+    case .classic: "Classic"
+    case .pretty: "Pretty"
+    case .basic: "Basic"
+    case .nerdy: "Nerdy"
+    }
+  }
+
+  public var sampleFilename: String {
+    switch self {
+    case .classic: "Midnight Drive - Aurora Vale.mp4"
+    case .pretty: "Midnight Drive • Aurora Vale.mp4"
+    case .basic: "Midnight Drive.mp4"
+    case .nerdy: "Midnight Drive [dQ8k2Lm7].mp4"
+    }
+  }
+
+  public var explanation: String {
+    switch self {
+    case .classic: "Title and creator, separated with a dash."
+    case .pretty: "A polished title and creator layout."
+    case .basic: "Only the media title."
+    case .nerdy: "Title plus a stable source identifier."
+    }
+  }
 }
 
 public enum LocalProcessingPreference: String, Codable, CaseIterable, Identifiable, Sendable {

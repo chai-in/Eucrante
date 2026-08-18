@@ -16,12 +16,18 @@ let package = Package(
     .target(
       name: "EucranteCore",
       linkerSettings: [
-        .linkedFramework("Security")
+        .linkedFramework("Security"),
+        .linkedFramework("AVFoundation"),
+        .linkedFramework("AudioToolbox"),
+        .linkedFramework("CoreMedia"),
       ]
     ),
     .executableTarget(
       name: "EucranteApp",
-      dependencies: ["EucranteCore"]
+      dependencies: ["EucranteCore"],
+      linkerSettings: [
+        .linkedFramework("UserNotifications")
+      ]
     ),
     .executableTarget(
       name: "EucranteCoreChecks",

@@ -68,7 +68,9 @@ Apple Music import is a separate user action after the output file has been veri
 
 ## Implementation boundary
 
-The current vertical slice can request and download the best source but does not yet transcode media or automate Music. These presets become selectable only when their full local-processing path is available. Until then, the interface may preview them as planned capabilities but must not label an unconverted file as Apple Lossless, AAC, or HEVC output.
+The native client now exposes all four policies, inspects the downloaded source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and retains its source staging data for retry; it is never labeled as a successful AAC, ALAC, or HEVC output.
+
+Before a notarized public release, the policies still require licensed 720p/1080p/4K SDR and HDR golden fixtures, multichannel audio fixtures, clean-machine Music permission testing, and tuning of the Efficient video bounds.
 
 ## Acceptance tests
 

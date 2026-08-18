@@ -1,3 +1,4 @@
+import EucranteCore
 import SwiftUI
 
 struct QueueView: View {
@@ -9,51 +10,139 @@ struct QueueView: View {
         ContentUnavailableView(
           "Nothing in the queue",
           systemImage: "tray",
-          description: Text("Saved links and active work will appear here.")
+          description: Text("Active saves and completed files will appear here.")
         )
       } else {
-        List(model.jobs) { job in
-          JobRow(model: model, job: job)
-            .padding(.vertical, 6)
+        List {
+          if !model.activeJobs.isEmpty {
+            Section("In Progress") {
+              ForEach(model.activeJobs) { job in
+                JobRow(model: model, job: job)
+              }
+            }
+          }
+
+          if !model.historyJobs.isEmpty {
+            Section("Recent") {
+              ForEach(model.historyJobs) { job in
+                JobRow(model: model, job: job)
+              }
+            }
+          }
         }
       }
     }
     .navigationTitle("Queue")
+    .toolbar {
+      if !model.historyJobs.isEmpty {
+        ToolbarItem {
+          Button("Clear History", role: .destructive) { model.clearHistory() }
+        }
+      }
+    }
   }
 }
 
 private struct JobRow: View {
   @ObservedObject var model: AppModel
-  let job: AppModel.DownloadJob
+  let job: PersistentJob
 
   var body: some View {
     HStack(spacing: 12) {
       statusIcon
         .frame(width: 24)
 
-      VStack(alignment: .leading, spacing: 3) {
-        Text(job.filename ?? job.sourceURL.host() ?? "Media")
-          .fontWeight(.medium)
-          .lineLimit(1)
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(job.filename ?? job.sourceHost)
+            .fontWeight(.medium)
+            .lineLimit(1)
+          Text(job.preset.displayName)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: Capsule())
+        }
+
         Text(detailText)
           .font(.subheadline)
-          .foregroundStyle(isFailure ? Color.red : Color.secondary)
+          .foregroundStyle(job.state == .failed ? Color.red : Color.secondary)
           .lineLimit(2)
+
+        if job.state.isActive, let progress = job.progress {
+          ProgressView(value: progress)
+            .accessibilityLabel(job.state.title)
+            .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0))))
+        }
       }
 
-      Spacer()
+      Spacer(minLength: 12)
+      actions
+    }
+    .padding(.vertical, 6)
+    .contextMenu { menuActions }
+  }
 
-      if case .completed(let url) = job.status {
-        Button("Show in Finder") { model.reveal(url) }
+  @ViewBuilder
+  private var actions: some View {
+    if job.state.isActive {
+      Button("Cancel", role: .cancel) { model.cancel(job.id) }
+    } else if job.state == .failed || job.state == .cancelled {
+      Button("Retry") { model.retry(job.id) }
+        .buttonStyle(.borderedProminent)
+    } else if job.state == .completed, let output = job.outputURL {
+      HStack(spacing: 8) {
+        if job.preset.isAudio {
+          if job.importedToMusic {
+            Label("In Music", systemImage: "checkmark")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Button("Import to Music") { model.importToMusic(job.id) }
+              .buttonStyle(.borderedProminent)
+          }
+        }
+        Button("Show in Finder") { model.reveal(output) }
       }
     }
-    .accessibilityElement(children: .combine)
+  }
+
+  @ViewBuilder
+  private var menuActions: some View {
+    if job.state.isActive {
+      Button("Cancel", role: .destructive) { model.cancel(job.id) }
+    } else {
+      if job.state == .failed || job.state == .cancelled {
+        Button("Retry") { model.retry(job.id) }
+      }
+      if let output = job.outputURL {
+        Button("Open") { model.open(output) }
+        Button("Show in Finder") { model.reveal(output) }
+        if job.preset.isAudio, !job.importedToMusic {
+          Button("Import to Music") { model.importToMusic(job.id) }
+        }
+        Divider()
+        Button("Move Local File to Trash", role: .destructive) {
+          model.removeLocalFile(job.id)
+        }
+      }
+      if job.cloudID != nil {
+        Button("Delete Retained Cloud Job", role: .destructive) {
+          Task { await model.deleteCloudJob(job.id) }
+        }
+      }
+      Divider()
+      Button("Remove from History", role: .destructive) {
+        model.removeFromHistory(job.id)
+      }
+    }
   }
 
   @ViewBuilder
   private var statusIcon: some View {
-    switch job.status {
-    case .resolving, .downloading:
+    switch job.state {
+    case .queued, .resolving, .downloading, .processing, .verifying, .uploading:
       ProgressView().controlSize(.small)
     case .awaitingSelection:
       Image(systemName: "square.grid.2x2").foregroundStyle(.blue)
@@ -61,22 +150,48 @@ private struct JobRow: View {
       Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
     case .failed:
       Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+    case .cancelled:
+      Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
     }
   }
 
   private var detailText: String {
-    switch job.status {
-    case .resolving, .awaitingSelection, .downloading:
-      job.status.title
-    case .completed(let url):
-      "Saved to \(url.deletingLastPathComponent().lastPathComponent)"
-    case .failed(let message):
-      message
+    if let message = job.errorMessage, job.state == .failed || job.state == .cancelled {
+      return message
     }
+    if job.state == .completed {
+      if let decision = job.mediaDecision {
+        return decision.displayName
+      }
+      if let output = job.outputURL {
+        return "Saved to \(output.deletingLastPathComponent().lastPathComponent)"
+      }
+    }
+    if let completed = job.bytesCompleted, completed > 0 {
+      let formatter = ByteCountFormatter()
+      let current = formatter.string(fromByteCount: completed)
+      if let expected = job.bytesExpected, expected > 0 {
+        return "\(job.state.title) · \(current) of \(formatter.string(fromByteCount: expected))"
+      }
+      return "\(job.state.title) · \(current)"
+    }
+    return job.state.title
   }
+}
 
-  private var isFailure: Bool {
-    if case .failed = job.status { return true }
-    return false
+extension PersistentJob.State {
+  fileprivate var title: String {
+    switch self {
+    case .queued: "Queued"
+    case .resolving: "Preparing"
+    case .awaitingSelection: "Choose an item"
+    case .downloading: "Downloading"
+    case .processing: "Optimizing for Apple devices"
+    case .verifying: "Checking the finished file"
+    case .uploading: "Retaining in your private cloud"
+    case .completed: "Completed"
+    case .failed: "Failed"
+    case .cancelled: "Cancelled"
+    }
   }
 }

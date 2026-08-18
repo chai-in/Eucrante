@@ -5,33 +5,37 @@ A native macOS client for saving public media through a user-owned Cloudflare de
 Eucrante uses an original Mac-native interface and no upstream names, mascots, illustrations, source code, or brand assets.
 
 > [!WARNING]
-> This repository is an early alpha. Local media conversion, persistence, signed distribution, and automated Apple Music import are not complete.
+> This repository is a development beta. Build it from source for testing; no notarized public release or signed automatic-update feed exists yet.
 
 ## Why Swift
 
 SwiftUI gives the app native windows, menus, keyboard shortcuts, accessibility, drag and drop, Share extensions, Keychain access, and efficient background networking without shipping a browser runtime. AppKit bridges remain available for macOS-specific behavior that SwiftUI does not expose cleanly.
 
-## Current vertical slice
+## Current product path
 
 - Configure a user-owned Cloudflare Worker endpoint.
 - Paste or type a public media URL.
-- Choose automatic, audio-only, or muted-video mode.
+- Choose one of four Apple-oriented one-click outputs, or use Custom controls.
 - Send the typed Cobalt v11 request.
-- Handle tunnel, redirect, picker, and API-error responses.
-- Download a selected result into `~/Downloads/Eucrante` using a path-safe, collision-free filename.
-- Keep an in-memory queue of the current session.
+- Handle tunnel, redirect, picker, local merge/mute, and API-error responses.
+- Download into a remembered user-selected folder using a path-safe, collision-free filename.
+- Keep a persistent queue and history with progress, cancellation, resumable transfer data, retry, Finder reveal, local Trash, and retained-cloud-job deletion.
+- Inspect and verify local media, prefer compatible passthrough, and use Apple-native AAC, ALAC, or HEVC conversion when the installed macOS media components support it.
+- Upload verified output to the user's private R2 job and retain it until explicit deletion.
+- Import a verified audio output into Music only when the user clicks **Import to Music**.
+- Export privacy-safe diagnostics that exclude source links, filenames, and credentials.
 - Authenticate to a private Eucrante deployment with an enrolled WARP session or Cloudflare Access credentials stored in Keychain.
 
-Local merge/transcode responses are modeled but intentionally gated until the AVFoundation/FFmpeg decision in Phase 2 is implemented and tested.
+The app also accepts `eucrante://save?url=…` links and native URL drag-and-drop. Gallery multi-select, Share/Shortcuts extensions, a signed updater, and broader golden-media coverage remain release work.
 
-## Planned one-click presets
+## One-click presets
 
 - Apple Music — Best: preserve compatible sources; convert incompatible lossless audio to Apple Lossless without upsampling.
 - Apple Music — Efficient: best source followed by AAC 256 VBR `.m4a` output optimized for quality and storage.
 - Apple Video — Best: passthrough when possible; otherwise highest-quality HEVC with AAC while preserving HDR.
 - Apple Video — Efficient: storage-oriented HEVC with AAC, no upscaling, and an explicit HDR policy.
 
-The preset contract is documented in [Docs/PRESETS.md](Docs/PRESETS.md). Presets will not claim a converted output until the local conversion and verification path is implemented.
+The preset contract and capability behavior are documented in [Docs/PRESETS.md](Docs/PRESETS.md). A job is marked complete only after the actual output has been inspected and verified; unavailable system encoders produce an explicit failure instead of a mislabeled file.
 
 ## Run locally
 
@@ -49,9 +53,9 @@ make app
 
 `swift run EucranteCoreChecks` verifies the core wire models and safety helpers.
 
-Opening `Package.swift` in full Xcode provides the simplest GUI development workflow. A signed `.app`, entitlements, assets, and notarized release pipeline are Phase 1 delivery work after the product shell is approved.
+Opening `Package.swift` in full Xcode provides the simplest GUI development workflow.
 
-`make app` builds a release executable, assembles `dist/Eucrante.app`, and applies ad-hoc signing by default. Set `CODESIGN_IDENTITY` to a Developer ID Application identity for a hardened signed build. Notarization is intentionally separate from this local packaging step.
+`make app` builds a release executable, assembles `dist/Eucrante.app`, applies the required Automation entitlement, and uses ad-hoc signing by default. Set `CODESIGN_IDENTITY` to a Developer ID Application identity for a hardened signed build. After storing a `notarytool` Keychain profile, set `APPLE_NOTARY_PROFILE` and run `make notarize` to submit, staple, validate, archive, and checksum the release.
 
 ## Important API constraint
 

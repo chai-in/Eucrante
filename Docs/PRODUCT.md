@@ -42,23 +42,25 @@ A Mac user who occasionally saves a public video, audio track, image set, or pos
 - Video quality; audio format and bitrate; metadata and filename preferences.
 - Tunnel and redirect downloads.
 - Picker UI for galleries.
-- Session queue, retry, cancel where transport permits, Finder reveal.
+- Persistent queue/history, retry, cancellation, Finder reveal, local Trash, and retained-cloud deletion.
 - Cloudflare Access service token in Keychain.
 - Original light/dark visual system, VoiceOver labels, keyboard support, Reduce Motion support.
 - Direct Developer ID distribution and notarization.
 
-### Phase 2
+### Implemented development-beta capabilities
 
 - One-click Apple Music Best/Efficient and Apple Video Best/Efficient presets.
 - Verified passthrough/remux decisions, Apple Lossless and AAC audio, and HEVC video with explicit HDR preservation.
 - User-initiated import of verified audio into the Music app.
 - Local merge, remux, audio conversion, GIF conversion, subtitle muxing, and metadata writing.
-- Persistent history with SwiftData.
+- Persistent Codable history stored with complete-file protection.
 - Durable resumable job history in the user's private R2 bucket, retained until explicit deletion.
 - User-selected download folder stored as a security-scoped bookmark.
 - Multiple concurrent jobs with configurable limit.
 - Menu-bar drop target and system Share extension.
-- Notifications and Dock progress.
+- Optional completion notifications and a Dock activity count.
+
+Broader gallery multi-select, Quick Look keyboard actions, Share/Menu Bar extensions, and golden-media tuning remain pre-release work.
 
 ### Later
 
@@ -114,6 +116,6 @@ A Mac user who occasionally saves a public video, audio track, image set, or pos
 
 ## Open product decisions
 
-- Final Eucrante icon and visual identity details.
+- Final production Eucrante icon asset; the pearl-and-wave direction is selected, but generated drafts with baked checkerboards were rejected.
 - Developer ID direct distribution versus Mac App Store constraints.
 - Whether local processing may bundle an FFmpeg build and under which license/configuration.
