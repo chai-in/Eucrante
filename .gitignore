@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+dist/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+.env
+.dev.vars
+node_modules/
+.wrangler/
+*.key
+*.p12
+*.mobileprovision

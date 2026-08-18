@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible problem in the macOS app.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, authorization headers, private URLs, personal filenames, or downloaded media. Report suspected vulnerabilities privately instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      placeholder: 0.1.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 14.7
+    validations:
+      required: true
+
+  - type: input
+    id: instance
+    attributes:
+      label: Processing-instance version
+      description: Give only the software version; do not include a private hostname or credential.
+      placeholder: Cobalt 11.x
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Describe the smallest reliable reproduction using non-sensitive example data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional redacted context
+      description: Add redacted logs or screenshots if they help.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed credentials, private URLs, personal filenames, and copyrighted media from this report.
+          required: true
+        - label: I searched existing issues for this problem.
+          required: true

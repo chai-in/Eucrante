@@ -1,0 +1,10 @@
+Copyright 2026 project contributors
+
+This product is an independent native client compatible with user-operated
+Cobalt API instances. It is not affiliated with or endorsed by imput or the
+Cobalt project. No upstream Cobalt source code, branding, mascots, or artwork
+is included.
+
+The optional Cloudflare Container deployment references the separately
+distributed Cobalt container image, which is licensed under AGPL-3.0. That
+image is not part of the Apache-2.0 Eucrante source distribution.
