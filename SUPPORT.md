@@ -1,9 +1,7 @@
 # Support
 
-This project is an early open-source alpha maintained on a best-effort basis.
+Use GitHub Discussions for usage questions and GitHub Issues for reproducible bugs or focused feature requests. Use private vulnerability reporting for security issues.
 
-Use GitHub Issues for reproducible bugs and focused feature requests. Include the app version, macOS version, processing-instance version, steps to reproduce, and redacted logs when relevant.
+Include the Eucrante version/commit, macOS version, local helper versions shown in Settings, and redacted steps. Never post browser data, cookies, source links containing personal tokens, personal filenames, downloaded media, or signing material.
 
-Do not post API keys, authorization headers, full private URLs, personal filenames, downloaded media, or other sensitive data. Use private vulnerability reporting for security issues.
-
-Questions about operating the upstream Cobalt server belong in the upstream project's support channels. This project cannot provide access to a hosted public API.
+Eucrante does not provide access to private or DRM-protected media and cannot guarantee provider availability or a particular Premium format.

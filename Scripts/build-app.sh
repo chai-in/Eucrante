@@ -15,6 +15,7 @@ if ! xcodebuild -version >/dev/null 2>&1; then
 fi
 
 cd "$project_root"
+"$project_root/Scripts/install-local-tools.sh"
 swift_sandbox_args=()
 if [[ "${EUCRANTE_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
     swift_sandbox_args+=(--disable-sandbox)
@@ -30,11 +31,20 @@ rm -rf "$app_bundle"
 mkdir -p "$contents/MacOS" "$contents/Resources"
 ditto "$binary_directory/$app_name" "$contents/MacOS/$app_name"
 ditto "$project_root/App/Info.plist" "$contents/Info.plist"
+mkdir -p "$contents/Resources/Tools"
+ditto "$project_root/.build/eucrante-tools/yt-dlp" "$contents/Resources/Tools/yt-dlp"
+ditto "$project_root/.build/eucrante-tools/deno" "$contents/Resources/Tools/deno"
+ditto "$project_root/ThirdParty" "$contents/Resources/Licenses"
+ditto "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NOTICES.md"
 
 signing_identity="${CODESIGN_IDENTITY:--}"
 if [[ "$signing_identity" == "-" ]]; then
+    codesign --force --sign - "$contents/Resources/Tools/yt-dlp"
+    codesign --force --sign - "$contents/Resources/Tools/deno"
     codesign --force --sign - --entitlements "$entitlements" "$app_bundle"
 else
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/yt-dlp"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/deno"
     codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$signing_identity" "$app_bundle"
 fi
 

@@ -15,12 +15,69 @@ enum CheckFailure: Error, CustomStringConvertible {
 struct EucranteCoreChecks {
   static func main() async throws {
     try checkURLValidation()
-    try checkEndpointSecurity()
-    try checkRequestEncoding()
-    try checkResponseDecoding()
     try checkFilenameSafety()
-    try await checkRequestToFileFlow()
+    if let value = ProcessInfo.processInfo.environment["EUCRANTE_E2E_URL"],
+      let sourceURL = URL(string: value)
+    {
+      if ProcessInfo.processInfo.environment["EUCRANTE_E2E_AUDIO"] == "1" {
+        try await checkLocalAudioFlow(sourceURL: sourceURL)
+      } else {
+        try await checkLocalMediaFlow(sourceURL: sourceURL)
+      }
+    }
+    if let path = ProcessInfo.processInfo.environment["EUCRANTE_INSPECT_FILE"] {
+      let info = try await LocalMediaProcessor().inspect(URL(fileURLWithPath: path))
+      print(
+        "Local inspection: \(info.width ?? 0)x\(info.height ?? 0), "
+          + "video=\(info.videoCodec ?? "none"), audio=\(info.audioCodec ?? "none")"
+      )
+    }
+    if let path = ProcessInfo.processInfo.environment["EUCRANTE_PROCESS_FILE"] {
+      try await checkAppleVideoConversion(input: URL(fileURLWithPath: path))
+    }
     print("EucranteCoreChecks: all checks passed")
+  }
+
+  private static func checkLocalAudioFlow(sourceURL: URL) async throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(
+      "eucrante-audio-e2e-\(UUID().uuidString)", isDirectory: true)
+    let staging = root.appendingPathComponent("staging", isDirectory: true)
+    let destination = root.appendingPathComponent("output", isDirectory: true)
+    try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let browser =
+      ProcessInfo.processInfo.environment["EUCRANTE_E2E_BROWSER"]
+      .flatMap(BrowserSessionSource.init(rawValue:)) ?? .none
+    let preset = EucrantePreset.appleMusicEfficient
+    let preferences = preset.requestPreferences(from: DownloadPreferences())
+    let acquirer = LocalMediaAcquirer()
+    let acquired = try await acquirer.acquire(
+      sourceURL: sourceURL,
+      preset: preset,
+      preferences: preferences,
+      browserSession: browser,
+      workingDirectory: staging,
+      progress: { _ in }
+    )
+    guard case .single(let input, let filename) = acquired else {
+      throw CheckFailure.failed("audio acquisition returned an unexpected result")
+    }
+    let processed = try await LocalMediaProcessor().process(
+      input,
+      preset: preset,
+      suggestedFilename: filename,
+      destination: destination
+    )
+    try require(processed.output.fileSize > 0, "finished local audio was empty")
+    try require(processed.output.audioCodec != nil, "finished local audio had no audio track")
+    try require(processed.output.videoCodec == nil, "audio-only output contained video")
+    print(
+      "Local audio E2E: \(processed.output.audioCodec ?? "unknown"), "
+        + "\(processed.output.fileSize) bytes, \(processed.decision.displayName), "
+        + "filename=\(processed.url.lastPathComponent)"
+    )
   }
 
   private static func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -39,60 +96,6 @@ struct EucranteCoreChecks {
     }
   }
 
-  private static func checkEndpointSecurity() throws {
-    _ = try EndpointSecurityPolicy.validate("https://api.example/")
-    _ = try EndpointSecurityPolicy.validate("http://localhost:9000/")
-
-    do {
-      _ = try EndpointSecurityPolicy.validate("http://api.example/")
-      throw CheckFailure.failed("public HTTP endpoint was accepted")
-    } catch is EndpointSecurityError {
-      // Expected.
-    }
-
-    try require(
-      !EndpointSecurityPolicy.allowsCredentials(
-        to: URL(string: "http://192.168.1.25:9000/")!),
-      "credentials were allowed over private HTTP"
-    )
-  }
-
-  private static func checkRequestEncoding() throws {
-    var preferences = DownloadPreferences()
-    preferences.downloadMode = .audio
-    preferences.audioBitrate = .kbps320
-    let request = CobaltRequest(
-      sourceURL: URL(string: "https://example.com/media")!,
-      preferences: preferences
-    )
-    let object =
-      try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
-    try require(object?["downloadMode"] as? String == "audio", "downloadMode wire value changed")
-    try require(object?["audioBitrate"] as? String == "320", "audioBitrate wire value changed")
-    try require(
-      object?["localProcessing"] as? String == "disabled", "localProcessing default changed")
-  }
-
-  private static func checkResponseDecoding() throws {
-    let tunnelJSON = Data(
-      #"{"status":"tunnel","url":"https://files.example/video.mp4","filename":"video.mp4"}"#.utf8
-    )
-    let tunnel = try JSONDecoder().decode(CobaltResponse.self, from: tunnelJSON)
-    guard case .tunnel(let transfer) = tunnel else {
-      throw CheckFailure.failed("tunnel response was not discriminated")
-    }
-    try require(transfer.filename == "video.mp4", "tunnel filename was not decoded")
-
-    let errorJSON = Data(
-      #"{"status":"error","error":{"code":"error.api.auth.api_key.missing"}}"#.utf8
-    )
-    let failure = try JSONDecoder().decode(CobaltResponse.self, from: errorJSON)
-    guard case .failure(let error) = failure else {
-      throw CheckFailure.failed("error response was not discriminated")
-    }
-    try require(error.code.contains("auth"), "API error code was not decoded")
-  }
-
   private static func checkFilenameSafety() throws {
     let filename = FilenameSanitizer.sanitize("../../bad:name/video.mp4")
     try require(!filename.contains("/"), "filename retained a slash")
@@ -106,108 +109,70 @@ struct EucranteCoreChecks {
     )
   }
 
-  private static func checkRequestToFileFlow() async throws {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [URLProtocolStub.self]
-    let session = URLSession(configuration: configuration)
+  private static func checkLocalMediaFlow(sourceURL: URL) async throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(
+      "eucrante-e2e-\(UUID().uuidString)", isDirectory: true)
+    let staging = root.appendingPathComponent("staging", isDirectory: true)
+    let destination = root.appendingPathComponent("output", isDirectory: true)
+    try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: root) }
 
-    URLProtocolStub.handler = { request in
-      if request.url?.host == "api.example" {
-        try require(request.httpMethod == "POST", "API client did not use POST")
-        try require(
-          request.value(forHTTPHeaderField: "Accept") == "application/json",
-          "API client omitted the JSON Accept header"
-        )
-        try require(
-          request.value(forHTTPHeaderField: "Authorization") == "Api-Key fixture-key",
-          "API client omitted credentials from a secure endpoint"
-        )
-        let response = HTTPURLResponse(
-          url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!
-        let body = Data(
-          #"{"status":"tunnel","url":"https://files.example/file","filename":"sample:video.mp4"}"#
-            .utf8
-        )
-        return (response, body)
-      }
+    let browser =
+      ProcessInfo.processInfo.environment["EUCRANTE_E2E_BROWSER"]
+      .flatMap(BrowserSessionSource.init(rawValue:)) ?? .none
+    let acquirer = LocalMediaAcquirer()
+    let status = await acquirer.toolStatus()
+    try require(status.ready, "local tools were not ready")
 
-      let response = HTTPURLResponse(
-        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
-        headerFields: ["Content-Type": "video/mp4"]
-      )!
-      return (response, Data("fixture-media".utf8))
-    }
-
-    let sourceURL = URL(string: "https://source.example/watch/1")!
-    let engine = CobaltAPIClient(
-      baseURL: URL(string: "https://api.example/")!,
-      authentication: .apiKey("fixture-key"),
-      session: session
+    let acquired = try await acquirer.acquire(
+      sourceURL: sourceURL,
+      preset: .appleVideoBest,
+      preferences: DownloadPreferences(),
+      browserSession: browser,
+      workingDirectory: staging,
+      progress: { _ in }
     )
-    let response = try await engine.process(CobaltRequest(sourceURL: sourceURL))
-    guard case .tunnel(let transfer) = response else {
-      throw CheckFailure.failed("request-to-file fixture did not return a tunnel")
+    guard case .merge(let video, let audio, let filename) = acquired else {
+      throw CheckFailure.failed("video acquisition did not return separate Apple tracks")
     }
 
-    let outputDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-      UUID().uuidString, isDirectory: true)
-    defer {
-      try? FileManager.default.removeItem(at: outputDirectory)
-      session.invalidateAndCancel()
-      URLProtocolStub.handler = nil
-    }
-
-    let saved = try await DownloadService(session: session).download(
-      from: transfer.url,
-      suggestedFilename: transfer.filename,
-      to: outputDirectory
+    let processor = LocalMediaProcessor()
+    let merged = try await processor.merge(
+      video: video,
+      audio: audio,
+      filename: filename,
+      workingDirectory: staging
     )
-    try require(
-      saved.url.lastPathComponent == "sample-video.mp4", "saved filename was not sanitized")
-    let savedData = try Data(contentsOf: saved.url)
-    try require(
-      savedData == Data("fixture-media".utf8),
-      "saved media did not match the response body"
+    let processed = try await processor.process(
+      merged,
+      preset: .appleVideoBest,
+      suggestedFilename: filename,
+      destination: destination
     )
-
-    URLProtocolStub.handler = { request in
-      let response = HTTPURLResponse(
-        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!
-      return (response, Data(count: 2 * 1_024 * 1_024 + 1))
-    }
-
-    do {
-      _ = try await engine.process(CobaltRequest(sourceURL: sourceURL))
-      throw CheckFailure.failed("oversized API response was accepted")
-    } catch CobaltClientError.responseTooLarge {
-      // Expected.
-    }
-  }
-}
-
-private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
-  nonisolated(unsafe) static var handler:
-    (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
-
-  override class func canInit(with request: URLRequest) -> Bool { true }
-
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-  override func startLoading() {
-    guard let handler = Self.handler else {
-      client?.urlProtocol(self, didFailWithError: CheckFailure.failed("missing URL fixture"))
-      return
-    }
-
-    do {
-      let (response, data) = try handler(request)
-      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-      client?.urlProtocol(self, didLoad: data)
-      client?.urlProtocolDidFinishLoading(self)
-    } catch {
-      client?.urlProtocol(self, didFailWithError: error)
-    }
+    try require(processed.output.fileSize > 0, "finished local media was empty")
+    try require(processed.output.videoCodec != nil, "finished local media had no video")
+    try require(processed.output.audioCodec != nil, "finished local media had no audio")
+    print(
+      "Local E2E: \(processed.output.width ?? 0)x\(processed.output.height ?? 0), "
+        + "\(processed.output.fileSize) bytes, \(processed.decision.displayName), "
+        + "filename=\(processed.url.lastPathComponent)"
+    )
   }
 
-  override func stopLoading() {}
+  private static func checkAppleVideoConversion(input: URL) async throws {
+    let destination = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eucrante-conversion-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: destination) }
+    let result = try await LocalMediaProcessor().process(
+      input,
+      preset: .appleVideoBest,
+      suggestedFilename: "conversion-check.mp4",
+      destination: destination
+    )
+    print(
+      "Local conversion: \(result.output.width ?? 0)x\(result.output.height ?? 0), "
+        + "video=\(result.output.videoCodec ?? "none"), \(result.output.fileSize) bytes"
+    )
+  }
 }

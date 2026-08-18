@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Do not include API keys, authorization headers, private URLs, personal filenames, or downloaded media. Report suspected vulnerabilities privately instead.
+        Do not include browser data, cookies, private URLs, personal filenames, or downloaded media. Report suspected vulnerabilities privately instead.
 
   - type: input
     id: version
@@ -25,11 +25,11 @@ body:
       required: true
 
   - type: input
-    id: instance
+    id: tools
     attributes:
-      label: Processing-instance version
-      description: Give only the software version; do not include a private hostname or credential.
-      placeholder: Cobalt 11.x
+      label: Local tool versions
+      description: Copy only the versions shown in YouTube Settings; do not include browser data.
+      placeholder: downloader 2026.07.04 · deno 2.9.5
 
   - type: textarea
     id: steps
@@ -64,7 +64,7 @@ body:
     attributes:
       label: Checklist
       options:
-        - label: I removed credentials, private URLs, personal filenames, and copyrighted media from this report.
+        - label: I removed browser data, cookies, private URLs, personal filenames, and copyrighted media from this report.
           required: true
         - label: I searched existing issues for this problem.
           required: true

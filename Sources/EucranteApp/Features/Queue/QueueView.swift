@@ -127,11 +127,6 @@ private struct JobRow: View {
           model.removeLocalFile(job.id)
         }
       }
-      if job.cloudID != nil {
-        Button("Delete Retained Cloud Job", role: .destructive) {
-          Task { await model.deleteCloudJob(job.id) }
-        }
-      }
       Divider()
       Button("Remove from History", role: .destructive) {
         model.removeFromHistory(job.id)
@@ -188,7 +183,7 @@ extension PersistentJob.State {
     case .downloading: "Downloading"
     case .processing: "Optimizing for Apple devices"
     case .verifying: "Checking the finished file"
-    case .uploading: "Retaining in your private cloud"
+    case .uploading: "Finishing"
     case .completed: "Completed"
     case .failed: "Failed"
     case .cancelled: "Cancelled"

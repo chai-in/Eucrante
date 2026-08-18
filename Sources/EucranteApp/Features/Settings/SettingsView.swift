@@ -14,8 +14,8 @@ struct SettingsView: View {
         .tabItem { Label("Audio", systemImage: "waveform") }
       metadata
         .tabItem { Label("Metadata", systemImage: "tag") }
-      processing
-        .tabItem { Label("Processing", systemImage: "server.rack") }
+      localMedia
+        .tabItem { Label("YouTube", systemImage: "play.rectangle") }
       privacy
         .tabItem { Label("Privacy", systemImage: "hand.raised") }
     }
@@ -30,22 +30,11 @@ struct SettingsView: View {
             Text(quality.displayName).tag(quality)
           }
         }
-        Picker("YouTube codec", selection: $model.preferences.youtubeVideoCodec) {
-          Text("H.264 · Most compatible").tag(YouTubeVideoCodec.h264)
-          Text("AV1 · Smallest files").tag(YouTubeVideoCodec.av1)
-          Text("VP9").tag(YouTubeVideoCodec.vp9)
-        }
-        Picker("YouTube container", selection: $model.preferences.youtubeVideoContainer) {
-          Text("Automatic").tag(YouTubeVideoContainer.automatic)
-          Text("MP4").tag(YouTubeVideoContainer.mp4)
-          Text("WebM").tag(YouTubeVideoContainer.webm)
-          Text("MKV").tag(YouTubeVideoContainer.mkv)
-        }
-      }
-
-      Section("Service options") {
-        Toggle("Allow H.265 from TikTok", isOn: $model.preferences.allowH265)
-        Toggle("Convert animated posts to GIF", isOn: $model.preferences.convertGif)
+        Text(
+          "Custom video uses H.264 MP4 for reliable Apple playback. One-click presets choose their own policy."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
@@ -53,24 +42,16 @@ struct SettingsView: View {
 
   private var audio: some View {
     Form {
-      Section("Defaults") {
-        Picker("Format", selection: $model.preferences.audioFormat) {
-          ForEach(AudioFormat.allCases) { format in
-            Text(format.displayName).tag(format)
-          }
-        }
-        Picker("Bitrate", selection: $model.preferences.audioBitrate) {
-          ForEach(AudioBitrate.allCases) { bitrate in
-            Text(bitrate.displayName).tag(bitrate)
-          }
-        }
-      }
-
-      Section("Service options") {
-        Toggle("Prefer better YouTube audio", isOn: $model.preferences.youtubeBetterAudio)
-        Toggle("Use original TikTok audio", isOn: $model.preferences.tiktokFullAudio)
-        TextField("YouTube dub language code", text: youtubeDubLanguage)
-          .textFieldStyle(.roundedBorder)
+      Section("Apple audio") {
+        Text(
+          "Custom audio saves the best AAC/M4A track exposed by the provider. Use Music — Efficient for the storage-balanced policy."
+        )
+        .foregroundStyle(.secondary)
+        Text(
+          "Music — Best preserves the highest-quality Apple-compatible audio source Eucrante can verify."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
@@ -78,7 +59,7 @@ struct SettingsView: View {
 
   private var metadata: some View {
     Form {
-      Section("Filenames and tags") {
+      Section("Filenames") {
         Picker("Filename style", selection: $model.preferences.filenameStyle) {
           ForEach(FilenameStyle.allCases) { style in
             Text(style.displayName).tag(style)
@@ -96,12 +77,6 @@ struct SettingsView: View {
           }
           .animation(.easeInOut(duration: 0.15), value: model.preferences.filenameStyle)
         }
-        Toggle("Disable embedded metadata", isOn: $model.preferences.disableMetadata)
-      }
-
-      Section("Subtitles") {
-        TextField("ISO language code, or leave empty", text: subtitleLanguage)
-          .textFieldStyle(.roundedBorder)
       }
     }
     .formStyle(.grouped)
@@ -131,53 +106,48 @@ struct SettingsView: View {
     .formStyle(.grouped)
   }
 
-  private var processing: some View {
+  private var localMedia: some View {
     Form {
-      Section("Eucrante deployment") {
-        TextField("https://eucrante.example.com/", text: $model.endpointText)
-          .textFieldStyle(.roundedBorder)
-        TextField("Cloudflare Access client ID", text: $model.accessClientIDText)
-          .textFieldStyle(.roundedBorder)
-        SecureField("Cloudflare Access client secret", text: $model.accessClientSecretText)
-          .textFieldStyle(.roundedBorder)
-
+      Section("Local media engine") {
+        Label(
+          model.localToolsMessage,
+          systemImage: model.localToolsReady
+            ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+        )
+        .foregroundStyle(model.localToolsReady ? Color.green : Color.orange)
         HStack {
-          Button("Save") { model.saveSettings() }
-            .buttonStyle(.borderedProminent)
           Button {
-            Task { await model.testEndpoint() }
+            Task { await model.refreshLocalToolStatus() }
           } label: {
-            if model.isTestingEndpoint {
+            if model.isCheckingLocalTools {
               ProgressView().controlSize(.small)
             } else {
-              Text("Test Connection")
+              Text("Check Tools")
             }
           }
-          .disabled(model.isTestingEndpoint)
+          .disabled(model.isCheckingLocalTools)
+          Button("Export Diagnostics…") { model.exportDiagnostics() }
         }
-
-        if let message = model.endpointTestMessage {
-          Text(message)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
-
-        Button("Export Diagnostics…") { model.exportDiagnostics() }
       }
 
-      Section("Behavior") {
-        Picker("Local processing", selection: $model.preferences.localProcessing) {
-          Text("Disabled").tag(LocalProcessingPreference.disabled)
-          Text("Preferred").tag(LocalProcessingPreference.preferred)
-          Text("Forced").tag(LocalProcessingPreference.forced)
+      Section("YouTube Premium") {
+        Picker("Use session from", selection: $model.browserSessionSource) {
+          ForEach(BrowserSessionSource.allCases) { source in
+            Text(source.displayName).tag(source)
+          }
         }
-        Toggle("Always proxy downloads", isOn: $model.preferences.alwaysProxy)
+        Text(
+          model.browserSessionSource == .none
+            ? "Public formats are available without signing in. Choose a browser only when you want Eucrante to use your local signed-in YouTube session."
+            : "Eucrante reads the selected browser session only on this Mac. It is passed directly to the local downloader and is never copied, uploaded, or saved by Eucrante."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
 
       Section {
         Text(
-          "Use the Worker URL from a Eucrante stack you control. Access credentials stay in Keychain; the official public Cobalt endpoint is never used."
+          "Everything runs inside Eucrante on this Mac. There is no server, localhost service, Cloudflare Worker, relay computer, or remote job store."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -190,16 +160,17 @@ struct SettingsView: View {
     Form {
       Section("Data") {
         Label("No analytics or advertising SDKs", systemImage: "checkmark.shield")
-        Label("Cloudflare Access credentials are stored in macOS Keychain", systemImage: "key")
         Label("Job history is stored only on this Mac", systemImage: "internaldrive")
         Label(
+          "Browser sessions are used only for provider requests", systemImage: "person.badge.key")
+        Label(
           "Diagnostics exclude source links and credentials", systemImage: "doc.badge.gearshape")
-        Button("Clear Completed History", role: .destructive) { model.clearHistory() }
+        Button("Clear Local History", role: .destructive) { model.clearHistory() }
           .disabled(model.historyJobs.isEmpty)
       }
       Section {
         Text(
-          "The app does not import browser cookies or attempt to access private or DRM-protected media."
+          "Eucrante can read a browser session only after you select that browser. It does not bypass DRM or access controls."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -208,17 +179,4 @@ struct SettingsView: View {
     .formStyle(.grouped)
   }
 
-  private var subtitleLanguage: Binding<String> {
-    Binding(
-      get: { model.preferences.subtitleLanguage ?? "" },
-      set: { model.preferences.subtitleLanguage = $0.isEmpty ? nil : $0.lowercased() }
-    )
-  }
-
-  private var youtubeDubLanguage: Binding<String> {
-    Binding(
-      get: { model.preferences.youtubeDubLanguage ?? "" },
-      set: { model.preferences.youtubeDubLanguage = $0.isEmpty ? nil : $0.lowercased() }
-    )
-  }
 }

@@ -22,7 +22,6 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
   }
 
   public let id: UUID
-  public var cloudID: UUID?
   public let sourceURL: URL
   public let preset: EucrantePreset
   public var state: State
@@ -32,18 +31,15 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
   public var filename: String?
   public var outputPath: String?
   public var stagingPath: String?
-  public var resumeData: Data?
   public var errorCode: String?
   public var errorMessage: String?
   public var mediaDecision: MediaDecision?
-  public var multipartUpload: EucranteMultipartState?
   public var importedToMusic: Bool
   public var createdAt: Date
   public var updatedAt: Date
 
   public init(
     id: UUID = UUID(),
-    cloudID: UUID? = nil,
     sourceURL: URL,
     preset: EucrantePreset,
     state: State = .queued,
@@ -53,17 +49,14 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     filename: String? = nil,
     outputPath: String? = nil,
     stagingPath: String? = nil,
-    resumeData: Data? = nil,
     errorCode: String? = nil,
     errorMessage: String? = nil,
     mediaDecision: MediaDecision? = nil,
-    multipartUpload: EucranteMultipartState? = nil,
     importedToMusic: Bool = false,
     createdAt: Date = .now,
     updatedAt: Date = .now
   ) {
     self.id = id
-    self.cloudID = cloudID
     self.sourceURL = sourceURL
     self.preset = preset
     self.state = state
@@ -73,11 +66,9 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     self.filename = filename
     self.outputPath = outputPath
     self.stagingPath = stagingPath
-    self.resumeData = resumeData
     self.errorCode = errorCode
     self.errorMessage = errorMessage
     self.mediaDecision = mediaDecision
-    self.multipartUpload = multipartUpload
     self.importedToMusic = importedToMusic
     self.createdAt = createdAt
     self.updatedAt = updatedAt

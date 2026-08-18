@@ -29,7 +29,7 @@ body:
     attributes:
       label: Project boundaries
       options:
-        - label: This request does not require private/DRM media access or browser-cookie extraction.
+        - label: This request does not require DRM bypass or silent browser-session access.
           required: true
-        - label: This request does not copy upstream Cobalt branding or source code.
+        - label: Any proposed bundled dependency has a compatible license and verifiable provenance.
           required: true

@@ -136,6 +136,28 @@ public enum FilenameStyle: String, Codable, CaseIterable, Identifiable, Sendable
     case .nerdy: "Title plus a stable source identifier."
     }
   }
+
+  public func filename(
+    title: String,
+    creator: String?,
+    sourceID: String?,
+    pathExtension: String
+  ) -> String {
+    let cleanCreator = creator?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanID = sourceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let stem: String
+    switch self {
+    case .classic:
+      stem = cleanCreator.map { $0.isEmpty ? title : "\(title) - \($0)" } ?? title
+    case .pretty:
+      stem = cleanCreator.map { $0.isEmpty ? title : "\(title) • \($0)" } ?? title
+    case .basic:
+      stem = title
+    case .nerdy:
+      stem = cleanID.map { $0.isEmpty ? title : "\(title) [\($0)]" } ?? title
+    }
+    return FilenameSanitizer.sanitize("\(stem).\(pathExtension)")
+  }
 }
 
 public enum LocalProcessingPreference: String, Codable, CaseIterable, Identifiable, Sendable {

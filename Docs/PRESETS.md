@@ -2,16 +2,16 @@
 
 ## Design rule
 
-Always acquire the best available source first. Do not upscale resolution, sample rate, bit depth, or bitrate, and do not transcode when the source is already compatible with the selected Apple destination. Converting a lossy source to a lossless format does not restore lost quality and only increases file size.
+Acquire the best source that the current Apple-native pipeline can decode and verify. Do not upscale resolution, sample rate, bit depth, or bitrate, and do not transcode when the source is already compatible with the selected Apple destination. Converting a lossy source to a lossless format does not restore lost quality and only increases file size.
 
 Presets are output policies, not promises that every provider exposes a lossless or high-resolution source. The completed job must show the source format and the actual output decision: passthrough, remux, or transcode.
 
 | One-click action | Source request | Preferred output | Storage policy |
 | --- | --- | --- | --- |
-| Apple Music — Best | Best audio-only source | Compatible source, or ALAC `.m4a` for incompatible lossless audio | Preserve real source quality; never inflate lossy audio |
-| Apple Music — Efficient | Best audio-only source | AAC `.m4a`, about 256 kbps VBR | High perceptual quality with predictable size |
-| Apple Video — Best | Best video and audio source | Compatible passthrough/remux, otherwise highest-quality HEVC + AAC | Preserve resolution, frame rate, color, and HDR |
-| Apple Video — Efficient | Best video and audio source | Hardware HEVC + AAC when available | Content-aware bitrate, source resolution up to 4K, never upscale |
+| Apple Music — Best | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified source `.m4a` | Preserve the best directly compatible source without generation loss |
+| Apple Music — Efficient | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified AAC `.m4a`; preserve a suitable existing source | Storage-conscious without unnecessary re-encoding |
+| Apple Video — Best | Best Apple-compatible H.264 video and AAC audio | Lossless local merge into MP4 | Preserve the selected source tracks without generation loss |
+| Apple Video — Efficient | Same best Apple-compatible source | Hardware HEVC + AAC when available | Smaller Apple-native output without upscaling |
 
 The main screen exposes these as four primary buttons. Once a valid URL is present, choosing a preset creates the job immediately; advanced controls create a Custom policy instead of silently modifying a named preset.
 
@@ -21,46 +21,46 @@ The main screen exposes these as four primary buttons. Once a valid URL is prese
 
 Goal: the highest-quality Apple Music-compatible file without wasteful expansion.
 
-1. Request audio-only mode and the best available source audio.
-2. If the source is already supported by Music, preserve it without transcoding.
-3. If a lossless source is incompatible, convert it to Apple Lossless in an `.m4a` container while preserving its native sample rate, bit depth, and channel layout.
-4. If a lossy source is incompatible, convert once to AAC in an `.m4a` container. Do not wrap lossy audio in Apple Lossless.
-5. Preserve available title, artist, album, artwork, date, track, and copyright metadata.
+1. Request audio-only mode and the best AAC/M4A source exposed by the provider.
+2. Preserve the compatible source without transcoding.
+3. Verify that the output contains readable audio and is non-empty before completion.
+4. Do not wrap lossy audio in Apple Lossless or claim quality the source does not contain.
 
 ### Apple Music — Efficient
 
 Goal: high perceptual quality with predictable storage use.
 
-This is a quality/storage balance, not a minimum-size mode. The interface calls the output **AAC 256**. The encoder profile is AAC-LC—the normal full-bandwidth AAC profile used for music—not low-bitrate HE-AAC.
+This is a quality/storage balance, not a minimum-size mode. AAC-LC is the normal full-bandwidth AAC profile used for music—not low-bitrate HE-AAC.
 
-1. Request audio-only mode and the best available source audio.
+1. Request audio-only mode and the best AAC/M4A source exposed by the provider.
 2. Preserve an existing compatible AAC source when it is already suitable.
-3. Otherwise convert once to AAC in an `.m4a` container using the AAC-LC profile, targeting 256 kbps stereo VBR and preserving the native sample rate up to 48 kHz.
+3. Otherwise convert once to AAC in an `.m4a` container using Apple's system encoder.
 4. Do not increase the effective quality of a lower-bitrate lossy source by merely assigning a larger output bitrate.
-5. Preserve the same metadata as the Best preset.
+
+If the provider exposes only one suitable AAC source, Best and Efficient may preserve the same file. Eucrante does not re-encode merely to make the bitrate label smaller.
 
 ## Video presets
 
 ### Apple Video — Best
 
-Goal: preserve the highest available picture quality in a format supported by current Apple playback and library apps.
+Goal: preserve the highest Apple-compatible picture quality in a format supported by current Apple playback and library apps.
 
-1. Request the maximum source resolution and best available audio.
-2. Passthrough or remux existing compatible H.264/HEVC video and AAC/ALAC audio when possible.
-3. Otherwise use AVFoundation's highest-quality HEVC export with AAC audio.
-4. Preserve source resolution, frame rate, aspect ratio, color metadata, and HDR/Dolby Vision when supported. Never upscale.
-5. Prefer `.mp4`; use `.mov` only when required to preserve an Apple media feature or metadata.
+1. Request the best H.264 MP4 video and AAC/M4A audio exposed to the selected session.
+2. Merge the tracks locally with AVFoundation without re-encoding.
+3. Preserve source resolution, frame rate, aspect ratio, and compatible color metadata. Never upscale.
+4. Use `.mp4` output.
+
+The current Apple-compatible YouTube path commonly tops out at 1080p. A future 4K path requires a separately licensed reproducible transcoder and must not be advertised until SDR/HDR fixtures pass.
 
 ### Apple Video — Efficient
 
 Goal: materially smaller files while retaining strong visual quality and Apple compatibility.
 
-1. Request the maximum source quality before local processing.
-2. Encode video as HEVC using hardware acceleration when available, retaining source resolution up to 4K and never upscaling.
-3. Preserve HDR with 10-bit HEVC when the source is HDR; do not silently tone-map to SDR.
-4. Encode audio as AAC using the AAC-LC profile, targeting 192 kbps stereo or 320 kbps for 5.1 audio.
-5. Use a content-aware bitrate budget based on pixel count and frame rate rather than a single bitrate for every resolution. Tune and lock the shipping bounds against licensed 720p, 1080p, and 4K SDR/HDR fixtures before release.
-6. Show an estimated output size before a long conversion and retain the original until the converted file is verified.
+1. Request the same best Apple-compatible H.264/AAC source as Video Best.
+2. Encode video as HEVC using AVFoundation/hardware acceleration when available, retaining source resolution and never upscaling.
+3. Do not claim HDR preservation until the 4K/HDR acquisition path and golden fixtures ship.
+4. Keep Apple-compatible AAC audio in the output.
+5. Retain the original until the converted file is verified.
 
 ## Apple Music import
 
@@ -68,18 +68,17 @@ Apple Music import is a separate user action after the output file has been veri
 
 ## Implementation boundary
 
-The native client now exposes all four policies, inspects the downloaded source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and retains its source staging data for retry; it is never labeled as a successful AAC, ALAC, or HEVC output.
+The native client exposes all four policies, acquires tracks locally, inspects the source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and retains its source staging data for retry; it is never labeled as a successful AAC, ALAC, or HEVC output.
 
-Before a notarized public release, the policies still require licensed 720p/1080p/4K SDR and HDR golden fixtures, multichannel audio fixtures, clean-machine Music permission testing, and tuning of the Efficient video bounds.
+Before a notarized public release, the policies still require licensed 720p/1080p SDR golden fixtures, multichannel audio fixtures, clean-machine browser/Music permission testing, and tuning of the Efficient video bounds. 4K/HDR fixtures are required before that later path can ship.
 
 ## Acceptance tests
 
 - Lossy input is never expanded to Apple Lossless.
 - Compatible input follows the passthrough/remux path without generation loss.
 - Output never exceeds the source resolution, sample rate, or bit depth.
-- AAC output imports into Music and carries expected metadata.
+- AAC output opens correctly and can be imported into Music.
 - HEVC output opens in QuickTime Player and imports into the intended Apple library app.
-- HDR fixtures retain their transfer function and color metadata.
 - Cancellation removes partial output and retains the verified source file.
-- Efficient presets produce smaller files than their corresponding Best presets for representative fixtures.
+- Efficient video produces a smaller verified file for representative fixtures; Efficient audio avoids a higher-bitrate source when the provider exposes a suitable alternative.
 - The named preset buttons map to immutable output policies; changing an advanced setting relabels the job as Custom.

@@ -6,12 +6,6 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
-  struct PickerSelection: Identifiable {
-    let id = UUID()
-    let jobID: UUID
-    let response: PickerResponse
-  }
-
   @Published var sourceText = ""
   @Published var selectedPreset: EucrantePreset = .custom
   @Published var preferences: DownloadPreferences {
@@ -28,13 +22,17 @@ final class AppModel: ObservableObject {
   }
   @Published var errorMessage: String?
   @Published var statusMessage: String?
-  @Published var pickerSelection: PickerSelection?
   @Published var focusRequestID = UUID()
   @Published private(set) var destinationDirectory: URL
   @Published var maximumConcurrentJobs: Int {
     didSet {
-      maximumConcurrentJobs = min(max(maximumConcurrentJobs, 1), 4)
+      let clamped = min(max(maximumConcurrentJobs, 1), 4)
+      if maximumConcurrentJobs != clamped {
+        maximumConcurrentJobs = clamped
+        return
+      }
       defaults.set(maximumConcurrentJobs, forKey: Self.maximumConcurrentKey)
+      drainQueue()
     }
   }
   @Published var completionNotificationsEnabled: Bool {
@@ -51,15 +49,14 @@ final class AppModel: ObservableObject {
       }
     }
   }
+  @Published var browserSessionSource: BrowserSessionSource {
+    didSet { defaults.set(browserSessionSource.rawValue, forKey: Self.browserSessionKey) }
+  }
+  @Published private(set) var localToolsReady = false
+  @Published private(set) var localToolsMessage = "Checking local media tools…"
+  @Published private(set) var isCheckingLocalTools = false
 
-  @Published var endpointText: String
-  @Published var accessClientIDText: String
-  @Published var accessClientSecretText: String
-  @Published private(set) var endpointTestMessage: String?
-  @Published private(set) var isTestingEndpoint = false
-
-  private let keychain = KeychainStore()
-  private let downloader: any MediaDownloading
+  private let localAcquirer: any LocalMediaAcquiring
   private let mediaProcessor: LocalMediaProcessor
   private let musicImporter = MusicLibraryImporter()
   private let completionNotifier = CompletionNotifier()
@@ -68,52 +65,53 @@ final class AppModel: ObservableObject {
   private var activeTasks: [UUID: Task<Void, Never>] = [:]
   private var persistenceTask: Task<Void, Never>?
 
-  private static let endpointKey = "processing.endpoint"
   private static let preferencesKey = "save.preferences.v1"
   private static let outputBookmarkKey = "downloads.output-bookmark.v1"
   private static let maximumConcurrentKey = "jobs.maximum-concurrent"
   private static let notificationsKey = "notifications.completion-enabled"
-  private static let accessClientIDAccount = "cloudflare-access-client-id"
-  private static let accessClientSecretAccount = "cloudflare-access-client-secret"
+  private static let browserSessionKey = "youtube.browser-session.v1"
 
   init(
     defaults: UserDefaults = .standard,
-    downloader: any MediaDownloading = DownloadService(),
+    localAcquirer: any LocalMediaAcquiring = LocalMediaAcquirer(),
     mediaProcessor: LocalMediaProcessor = LocalMediaProcessor(),
     jobStore: JobStore = JobStore()
   ) {
     self.defaults = defaults
-    self.downloader = downloader
+    self.localAcquirer = localAcquirer
     self.mediaProcessor = mediaProcessor
     self.jobStore = jobStore
     preferences =
       defaults.data(forKey: Self.preferencesKey)
       .flatMap { try? JSONDecoder().decode(DownloadPreferences.self, from: $0) }
       ?? DownloadPreferences()
-    endpointText = defaults.string(forKey: Self.endpointKey) ?? ""
-    accessClientIDText = (try? keychain.string(for: Self.accessClientIDAccount)) ?? ""
-    accessClientSecretText = (try? keychain.string(for: Self.accessClientSecretAccount)) ?? ""
-    maximumConcurrentJobs = max(1, defaults.integer(forKey: Self.maximumConcurrentKey))
+    maximumConcurrentJobs = min(max(1, defaults.integer(forKey: Self.maximumConcurrentKey)), 4)
     completionNotificationsEnabled = defaults.bool(forKey: Self.notificationsKey)
+    browserSessionSource =
+      BrowserSessionSource(
+        rawValue: defaults.string(forKey: Self.browserSessionKey) ?? "none") ?? .none
     destinationDirectory = Self.resolveDestination(from: defaults)
 
-    Task { await loadHistory() }
+    Task {
+      await loadHistory()
+      await refreshLocalToolStatus()
+    }
   }
 
   var canSubmit: Bool {
     !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && configuredEndpoint != nil
-      && activeJobCount < maximumConcurrentJobs
+      && localToolsReady
   }
 
   var isSubmitting: Bool { activeJobCount > 0 }
-  var isEndpointConfigured: Bool { configuredEndpoint != nil }
   var activeJobs: [PersistentJob] { jobs.filter { $0.state.isActive } }
   var historyJobs: [PersistentJob] { jobs.filter { !$0.state.isActive } }
 
   func submit(preset: EucrantePreset? = nil) async {
     guard canSubmit else {
-      if configuredEndpoint == nil { errorMessage = endpointConfigurationMessage }
+      if !localToolsReady {
+        errorMessage = "Eucrante's local media tools are not ready. Open Settings and check them."
+      }
       return
     }
 
@@ -130,14 +128,10 @@ final class AppModel: ObservableObject {
     jobs.insert(job, at: 0)
     sourceText = ""
     schedulePersist()
-    start(job.id)
+    drainQueue()
   }
 
   func retry(_ jobID: UUID) {
-    guard activeJobCount < maximumConcurrentJobs else {
-      errorMessage = "Wait for an active job to finish before retrying this one."
-      return
-    }
     update(jobID) {
       $0.state = .queued
       $0.errorCode = nil
@@ -145,7 +139,7 @@ final class AppModel: ObservableObject {
       $0.progress = nil
       $0.updatedAt = .now
     }
-    start(jobID)
+    drainQueue()
   }
 
   func cancel(_ jobID: UUID) {
@@ -161,6 +155,7 @@ final class AppModel: ObservableObject {
     guard let index = jobs.firstIndex(where: { $0.id == jobID }), !jobs[index].state.isActive else {
       return
     }
+    removeStagingData(for: jobs[index])
     jobs.remove(at: index)
     schedulePersist()
   }
@@ -173,25 +168,9 @@ final class AppModel: ObservableObject {
         $0.outputPath = nil
         $0.updatedAt = .now
       }
-      statusMessage = "Moved the local file to Trash. The cloud job was kept."
+      statusMessage = "Moved the local file to Trash."
     } catch {
       errorMessage = "The local file could not be moved to Trash."
-    }
-  }
-
-  func deleteCloudJob(_ jobID: UUID) async {
-    guard let job = jobs.first(where: { $0.id == jobID }), let cloudID = job.cloudID,
-      let client = makeClient()
-    else { return }
-    do {
-      let result = try await client.deleteJob(id: cloudID)
-      update(jobID) {
-        $0.cloudID = nil
-        $0.updatedAt = .now
-      }
-      statusMessage = "Deleted \(result.deletedObjects) retained cloud objects."
-    } catch {
-      errorMessage = userMessage(for: error)
     }
   }
 
@@ -208,20 +187,6 @@ final class AppModel: ObservableObject {
       statusMessage = "Imported \(output.lastPathComponent) into Music."
     } catch {
       errorMessage = userMessage(for: error)
-    }
-  }
-
-  func savePickerItem(_ item: PickerItem, for jobID: UUID) async {
-    pickerSelection = nil
-    guard let job = jobs.first(where: { $0.id == jobID }) else { return }
-    do {
-      try await downloadAndFinalize(
-        transferURL: item.url,
-        filename: nil,
-        job: job
-      )
-    } catch {
-      fail(jobID, error: error)
     }
   }
 
@@ -250,42 +215,20 @@ final class AppModel: ObservableObject {
     destinationDirectory = Self.defaultDestination()
   }
 
-  func saveSettings() {
-    let normalizedEndpoint = endpointText.trimmingCharacters(in: .whitespacesAndNewlines)
-    endpointText = normalizedEndpoint
-    defaults.set(normalizedEndpoint, forKey: Self.endpointKey)
-
-    do {
-      if accessClientIDText.isEmpty {
-        try keychain.delete(account: Self.accessClientIDAccount)
-      } else {
-        try keychain.set(accessClientIDText, for: Self.accessClientIDAccount)
-      }
-      if accessClientSecretText.isEmpty {
-        try keychain.delete(account: Self.accessClientSecretAccount)
-      } else {
-        try keychain.set(accessClientSecretText, for: Self.accessClientSecretAccount)
-      }
-      endpointTestMessage = "Settings saved."
-    } catch {
-      endpointTestMessage = userMessage(for: error)
-    }
-  }
-
-  func testEndpoint() async {
-    guard let client = makeClient() else {
-      endpointTestMessage = endpointConfigurationMessage
-      return
-    }
-
-    isTestingEndpoint = true
-    defer { isTestingEndpoint = false }
-    do {
-      let info = try await client.discovery()
-      endpointTestMessage =
-        "Connected to \(info.product) API \(info.apiVersion) · \(info.capabilities.count) capabilities"
-    } catch {
-      endpointTestMessage = userMessage(for: error)
+  func refreshLocalToolStatus() async {
+    isCheckingLocalTools = true
+    defer { isCheckingLocalTools = false }
+    let status = await localAcquirer.toolStatus()
+    localToolsReady = status.ready
+    if status.ready {
+      let downloader = status.downloaderVersion ?? "ready"
+      let runtime =
+        status.runtimeVersion?.split(separator: " ").prefix(2).joined(separator: " ")
+        ?? "ready"
+      localToolsMessage = "Ready · downloader \(downloader) · \(runtime)"
+      drainQueue()
+    } else {
+      localToolsMessage = "Local media tools are missing. Reinstall Eucrante or rebuild the app."
     }
   }
 
@@ -298,6 +241,9 @@ final class AppModel: ObservableObject {
   }
 
   func clearHistory() {
+    for job in jobs where !job.state.isActive {
+      removeStagingData(for: job)
+    }
     jobs.removeAll { !$0.state.isActive }
     schedulePersist()
   }
@@ -317,9 +263,8 @@ final class AppModel: ObservableObject {
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         ?? "development",
       macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-      endpointConfigured: isEndpointConfigured,
-      authentication: hasAccessCredentials
-        ? "Cloudflare Access service token" : "WARP or deployment policy",
+      localToolsReady: localToolsReady,
+      browserSession: browserSessionSource.rawValue,
       destinationAvailable: (try? destinationDirectory.checkResourceIsReachable()) ?? false,
       jobStateCounts: stateCounts,
       preferences: preferences
@@ -350,34 +295,35 @@ final class AppModel: ObservableObject {
   }
 
   private func start(_ jobID: UUID) {
-    guard activeTasks[jobID] == nil else { return }
+    guard activeTasks[jobID] == nil, activeJobCount < maximumConcurrentJobs,
+      jobs.first(where: { $0.id == jobID })?.state == .queued
+    else { return }
     activeJobCount += 1
     let task = Task { [weak self] in
       guard let self else { return }
       await execute(jobID)
       activeTasks[jobID] = nil
       activeJobCount = max(0, activeJobCount - 1)
+      drainQueue()
     }
     activeTasks[jobID] = task
   }
 
-  private func execute(_ jobID: UUID) async {
-    guard let job = jobs.first(where: { $0.id == jobID }), let client = makeClient() else {
-      fail(jobID, message: endpointConfigurationMessage)
-      return
-    }
-    if let output = job.outputURL, job.cloudID != nil, job.mediaDecision != nil,
-      FileManager.default.fileExists(atPath: output.path)
+  private func drainQueue() {
+    guard localToolsReady else { return }
+    while activeJobCount < maximumConcurrentJobs,
+      let job = jobs.first(where: { $0.state == .queued && activeTasks[$0.id] == nil })
     {
-      let access = destinationDirectory.startAccessingSecurityScopedResource()
-      defer { if access { destinationDirectory.stopAccessingSecurityScopedResource() } }
-      do {
-        _ = try await mediaProcessor.inspect(output)
-        try await retainAndComplete(output, jobID: jobID)
-      } catch {
-        fail(jobID, error: error)
-      }
-      return
+      start(job.id)
+    }
+  }
+
+  private func execute(_ jobID: UUID) async {
+    guard let job = jobs.first(where: { $0.id == jobID }) else { return }
+    let jobDestination = destinationDirectory
+    let destinationAccess = jobDestination.startAccessingSecurityScopedResource()
+    defer {
+      if destinationAccess { jobDestination.stopAccessingSecurityScopedResource() }
     }
     update(jobID) {
       $0.state = .resolving
@@ -387,16 +333,37 @@ final class AppModel: ObservableObject {
 
     do {
       let jobPreferences = job.preset.requestPreferences(from: preferences)
-      let result = try await client.createJob(
-        request: CobaltRequest(sourceURL: job.sourceURL, preferences: jobPreferences),
-        preset: job.preset
-      )
-      update(jobID) {
-        $0.cloudID = result.job.id
+      let staging = stagingDirectory(for: job.id)
+      update(job.id) {
+        $0.state = .downloading
+        $0.stagingPath = staging.path
         $0.updatedAt = .now
       }
-      guard let refreshed = jobs.first(where: { $0.id == jobID }) else { return }
-      try await handle(result.result, for: refreshed)
+      let result = try await localAcquirer.acquire(
+        sourceURL: job.sourceURL,
+        preset: job.preset,
+        preferences: jobPreferences,
+        browserSession: browserSessionSource,
+        workingDirectory: staging,
+        progress: localAcquisitionProgressHandler(for: job.id)
+      )
+      switch result {
+      case .single(let input, let filename):
+        try await finalize(input, filename: filename, job: job, destination: jobDestination)
+      case .merge(let video, let audio, let filename):
+        update(job.id) {
+          $0.state = .processing
+          $0.progress = nil
+          $0.updatedAt = .now
+        }
+        let merged = try await mediaProcessor.merge(
+          video: video,
+          audio: audio,
+          filename: filename,
+          workingDirectory: staging
+        )
+        try await finalize(merged, filename: filename, job: job, destination: jobDestination)
+      }
     } catch is CancellationError {
       update(jobID) {
         $0.state = .cancelled
@@ -408,95 +375,12 @@ final class AppModel: ObservableObject {
     }
   }
 
-  private func handle(_ response: CobaltResponse, for job: PersistentJob) async throws {
-    switch response {
-    case .tunnel(let transfer), .redirect(let transfer):
-      try await downloadAndFinalize(
-        transferURL: transfer.url,
-        filename: transfer.filename,
-        job: job
-      )
-
-    case .picker(let response):
-      update(job.id) {
-        $0.state = .awaitingSelection
-        $0.updatedAt = .now
-      }
-      pickerSelection = PickerSelection(jobID: job.id, response: response)
-
-    case .localProcessing(let response):
-      try await handleLocalProcessing(response, for: job)
-
-    case .failure(let error):
-      throw error
-    }
-  }
-
-  private func handleLocalProcessing(
-    _ response: LocalProcessingResponse,
-    for job: PersistentJob
+  private func finalize(
+    _ input: URL,
+    filename: String,
+    job: PersistentJob,
+    destination: URL
   ) async throws {
-    let staging = stagingDirectory(for: job.id)
-    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-    update(job.id) {
-      $0.state = .downloading
-      $0.stagingPath = staging.path
-      $0.updatedAt = .now
-    }
-
-    var inputs: [URL] = []
-    for (index, tunnel) in response.tunnel.enumerated() {
-      let saved = try await downloader.download(
-        from: tunnel,
-        suggestedFilename: "input-\(index + 1)",
-        to: staging,
-        resumeData: nil,
-        progress: progressHandler(for: job.id)
-      )
-      inputs.append(saved.url)
-    }
-    let prepared = try await mediaProcessor.prepare(
-      response,
-      inputs: inputs,
-      workingDirectory: staging
-    )
-    try await finalize(prepared, filename: response.output.filename, job: job)
-  }
-
-  private func downloadAndFinalize(
-    transferURL: URL,
-    filename: String?,
-    job: PersistentJob
-  ) async throws {
-    let destination = job.preset == .custom ? destinationDirectory : stagingDirectory(for: job.id)
-    update(job.id) {
-      $0.state = .downloading
-      $0.filename = filename
-      $0.stagingPath = job.preset == .custom ? nil : destination.path
-      $0.updatedAt = .now
-    }
-
-    let access = destinationDirectory.startAccessingSecurityScopedResource()
-    defer { if access { destinationDirectory.stopAccessingSecurityScopedResource() } }
-    let saved: SavedFile
-    do {
-      saved = try await downloader.download(
-        from: transferURL,
-        suggestedFilename: filename,
-        to: destination,
-        resumeData: job.resumeData,
-        progress: progressHandler(for: job.id)
-      )
-    } catch let error as DownloadError {
-      if let data = error.resumeData {
-        update(job.id) { $0.resumeData = data }
-      }
-      throw error
-    }
-    try await finalize(saved.url, filename: filename ?? saved.url.lastPathComponent, job: job)
-  }
-
-  private func finalize(_ input: URL, filename: String, job: PersistentJob) async throws {
     let output: URL
     let decision: MediaDecision
     if job.preset.requiresLocalVerification {
@@ -509,7 +393,7 @@ final class AppModel: ObservableObject {
         input,
         preset: job.preset,
         suggestedFilename: filename,
-        destination: destinationDirectory,
+        destination: destination,
         progress: processingProgressHandler(for: job.id)
       )
       output = processed.url
@@ -519,7 +403,7 @@ final class AppModel: ObservableObject {
         input,
         preset: .custom,
         suggestedFilename: filename,
-        destination: destinationDirectory,
+        destination: destination,
         progress: processingProgressHandler(for: job.id)
       )
       output = processed.url
@@ -553,29 +437,6 @@ final class AppModel: ObservableObject {
   private func retainAndComplete(_ output: URL, jobID: UUID) async throws {
     guard let job = jobs.first(where: { $0.id == jobID }) else { return }
 
-    if let cloudID = job.cloudID,
-      let client = makeClient()
-    {
-      update(jobID) {
-        $0.state = .uploading
-        $0.progress =
-          $0.multipartUpload.map {
-            Double($0.bytesCompleted) / Double(max(1, $0.fileSize))
-          } ?? 0
-        $0.updatedAt = .now
-      }
-      let slot = "verified-output.\(output.pathExtension.lowercased())"
-      _ = try await client.uploadOutput(
-        jobID: cloudID,
-        fileURL: output,
-        slot: slot,
-        contentType: contentType(for: output),
-        resumeState: job.multipartUpload,
-        progress: multipartProgressHandler(for: jobID)
-      )
-      await Task.yield()
-    }
-
     let byteCount = (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
     update(jobID) {
       $0.state = .completed
@@ -584,8 +445,6 @@ final class AppModel: ObservableObject {
       $0.bytesCompleted = byteCount
       $0.bytesExpected = byteCount
       $0.progress = 1
-      $0.resumeData = nil
-      $0.multipartUpload = nil
       $0.errorCode = nil
       $0.errorMessage = nil
       $0.updatedAt = .now
@@ -606,9 +465,20 @@ final class AppModel: ObservableObject {
     }
   }
 
-  private func progressHandler(
+  private func processingProgressHandler(for jobID: UUID) -> @Sendable (Double) -> Void {
+    { [weak self] fraction in
+      Task { @MainActor [weak self] in
+        self?.update(jobID, persist: false) {
+          $0.progress = min(1, max(0, fraction))
+          $0.updatedAt = .now
+        }
+      }
+    }
+  }
+
+  private func localAcquisitionProgressHandler(
     for jobID: UUID
-  ) -> @Sendable (DownloadProgress) -> Void {
+  ) -> @Sendable (LocalAcquisitionProgress) -> Void {
     { [weak self] progress in
       Task { @MainActor [weak self] in
         self?.update(jobID, persist: false) {
@@ -621,39 +491,11 @@ final class AppModel: ObservableObject {
     }
   }
 
-  private func processingProgressHandler(for jobID: UUID) -> @Sendable (Double) -> Void {
-    { [weak self] fraction in
-      Task { @MainActor [weak self] in
-        self?.update(jobID, persist: false) {
-          $0.progress = min(1, max(0, fraction))
-          $0.updatedAt = .now
-        }
-      }
-    }
-  }
-
-  private func multipartProgressHandler(
-    for jobID: UUID
-  ) -> @Sendable (EucranteMultipartState?) -> Void {
-    { [weak self] state in
-      Task { @MainActor [weak self] in
-        self?.update(jobID) {
-          $0.multipartUpload = state
-          if let state {
-            $0.progress = Double(state.bytesCompleted) / Double(max(1, state.fileSize))
-            $0.bytesCompleted = state.bytesCompleted
-            $0.bytesExpected = state.fileSize
-          }
-          $0.updatedAt = .now
-        }
-      }
-    }
-  }
-
   private func loadHistory() async {
     do {
       var loaded = try await jobStore.load()
-      for index in loaded.indices where loaded[index].state.isActive {
+      for index in loaded.indices
+      where loaded[index].state.isActive && loaded[index].state != .queued {
         loaded[index].state = .failed
         loaded[index].errorCode = "interrupted"
         loaded[index].errorMessage =
@@ -662,6 +504,7 @@ final class AppModel: ObservableObject {
       }
       jobs = loaded.sorted { $0.createdAt > $1.createdAt }
       schedulePersist()
+      drainQueue()
     } catch {
       errorMessage = userMessage(for: error)
     }
@@ -688,11 +531,7 @@ final class AppModel: ObservableObject {
   }
 
   private func fail(_ id: UUID, error: Error) {
-    if let cobalt = error as? CobaltAPIError {
-      fail(id, message: apiErrorMessage(cobalt), code: cobalt.code)
-    } else {
-      fail(id, message: userMessage(for: error))
-    }
+    fail(id, message: userMessage(for: error))
   }
 
   private func fail(_ id: UUID, message: String, code: String? = nil) {
@@ -703,50 +542,6 @@ final class AppModel: ObservableObject {
       $0.updatedAt = .now
     }
     errorMessage = message
-  }
-
-  private var configuredEndpoint: URL? {
-    let value = endpointText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let endpoint = try? EndpointSecurityPolicy.validate(value) else { return nil }
-    guard !hasPartialAccessCredentials else { return nil }
-    guard !hasAccessCredentials || EndpointSecurityPolicy.allowsCredentials(to: endpoint) else {
-      return nil
-    }
-    return endpoint
-  }
-
-  private var endpointConfigurationMessage: String {
-    if hasAccessCredentials,
-      let endpoint = try? EndpointSecurityPolicy.validate(endpointText),
-      !EndpointSecurityPolicy.allowsCredentials(to: endpoint)
-    {
-      return
-        "Cloudflare Access credentials require HTTPS, except for a loopback endpoint on this Mac."
-    }
-    if hasPartialAccessCredentials {
-      return
-        "Enter both Cloudflare Access service-token fields, or leave both empty for WARP authentication."
-    }
-    return "Use the HTTPS URL of your Eucrante deployment."
-  }
-
-  private var hasAccessCredentials: Bool {
-    !accessClientIDText.isEmpty && !accessClientSecretText.isEmpty
-  }
-
-  private var hasPartialAccessCredentials: Bool {
-    accessClientIDText.isEmpty != accessClientSecretText.isEmpty
-  }
-
-  private func makeClient() -> EucranteAPIClient? {
-    guard let endpoint = configuredEndpoint else { return nil }
-    let access =
-      hasAccessCredentials
-      ? CloudflareAccessCredentials(
-        clientID: accessClientIDText,
-        clientSecret: accessClientSecretText)
-      : nil
-    return EucranteAPIClient(baseURL: endpoint, access: access)
   }
 
   private func stagingDirectory(for jobID: UUID) -> URL {
@@ -760,37 +555,18 @@ final class AppModel: ObservableObject {
       .appendingPathComponent(jobID.uuidString, isDirectory: true)
   }
 
-  private func contentType(for url: URL) -> String {
-    switch url.pathExtension.lowercased() {
-    case "m4a": "audio/mp4"
-    case "mp3": "audio/mpeg"
-    case "mp4", "m4v": "video/mp4"
-    case "mov": "video/quicktime"
-    case "jpg", "jpeg": "image/jpeg"
-    case "png": "image/png"
-    default: "application/octet-stream"
-    }
-  }
-
-  private func apiErrorMessage(_ error: CobaltAPIError) -> String {
-    switch error.code {
-    case let code where code.contains("auth"):
-      "The processing deployment rejected the request. Check WARP and container authentication."
-    case let code where code.contains("rate"):
-      "The processing instance is rate-limiting requests. Wait a moment and try again."
-    case let code where code.contains("unsupported"):
-      "This link is not supported by the configured processing instance."
-    default:
-      "The processing instance could not save this link (\(error.code))."
-    }
+  private func removeStagingData(for job: PersistentJob) {
+    guard job.stagingPath != nil else { return }
+    let directory = stagingDirectory(for: job.id)
+    try? FileManager.default.removeItem(at: directory)
   }
 
   private struct DiagnosticsReport: Codable {
     let generatedAt: Date
     let appVersion: String
     let macOSVersion: String
-    let endpointConfigured: Bool
-    let authentication: String
+    let localToolsReady: Bool
+    let browserSession: String
     let destinationAvailable: Bool
     let jobStateCounts: [String: Int]
     let preferences: DownloadPreferences

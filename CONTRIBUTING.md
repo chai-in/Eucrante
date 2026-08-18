@@ -7,7 +7,7 @@ Thank you for helping improve this independent macOS media client.
 - Search existing issues and pull requests.
 - Use an issue for substantial behavior, architecture, or user-interface changes before investing in an implementation.
 - Keep changes focused and avoid unrelated formatting or dependency additions.
-- Do not copy source code, artwork, names, mascots, or other branding from the upstream Cobalt project.
+- Review licensing and provenance before adding or updating a bundled executable.
 - Use only media fixtures that you created, that are openly licensed, or that you are authorized to redistribute.
 
 ## Development setup
@@ -26,11 +26,6 @@ swift test
 swift build -Xswiftc -warnings-as-errors
 swift run EucranteCoreChecks
 make app
-
-cd Backend
-pnpm install --frozen-lockfile
-pnpm run check
-pnpm test
 ```
 
 ## Pull requests
@@ -38,8 +33,8 @@ pnpm test
 - Add or update tests for behavioral changes.
 - Explain the user-visible outcome and important tradeoffs.
 - Update documentation when behavior, security boundaries, or API compatibility changes.
-- Never include API keys, tokens, private URLs, downloaded media, signing identities, or provisioning profiles.
-- Treat source URLs, filenames, API responses, and remote downloads as untrusted input.
+- Never include browser data, cookies, private URLs, downloaded media, signing identities, or provisioning profiles.
+- Treat source URLs, filenames, helper output, metadata, and downloaded media as untrusted input.
 
 By submitting a contribution, you agree that it is licensed under the Apache License 2.0 under the contribution terms in section 5 of that license. No separate contributor license agreement is currently required.
 

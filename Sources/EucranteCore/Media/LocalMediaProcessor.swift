@@ -218,93 +218,54 @@ public actor LocalMediaProcessor: MediaProcessing {
     return ProcessedMedia(url: outputURL, decision: decision, source: source, output: output)
   }
 
-  public func prepare(
-    _ response: LocalProcessingResponse,
-    inputs: [URL],
+  public func merge(
+    video: URL,
+    audio: URL,
+    filename: String,
     workingDirectory: URL
   ) async throws -> URL {
-    guard let first = inputs.first else { throw MediaProcessingError.missingInput }
-    switch response.type.lowercased() {
-    case "merge":
-      guard inputs.count >= 2 else { throw MediaProcessingError.missingInput }
-      let videoAsset = AVURLAsset(url: first)
-      let audioAsset = AVURLAsset(url: inputs[1])
-      guard let sourceVideo = try await videoAsset.loadTracks(withMediaType: .video).first,
-        let sourceAudio = try await audioAsset.loadTracks(withMediaType: .audio).first
-      else {
-        throw MediaProcessingError.missingInput
-      }
-      let composition = AVMutableComposition()
-      guard
-        let videoTrack = composition.addMutableTrack(
-          withMediaType: .video,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        ),
-        let audioTrack = composition.addMutableTrack(
-          withMediaType: .audio,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-      else {
-        throw MediaProcessingError.writer
-      }
-      let videoDuration = try await videoAsset.load(.duration)
-      let audioDuration = try await audioAsset.load(.duration)
-      let duration = CMTimeMinimum(videoDuration, audioDuration)
-      try videoTrack.insertTimeRange(
-        CMTimeRange(start: .zero, duration: duration),
-        of: sourceVideo,
-        at: .zero
-      )
-      try audioTrack.insertTimeRange(
-        CMTimeRange(start: .zero, duration: duration),
-        of: sourceAudio,
-        at: .zero
-      )
-      videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
-      return try await exportAsset(
-        composition,
-        presetName: AVAssetExportPresetPassthrough,
-        fileType: .mp4,
-        filename: outputName(response.output.filename, extension: "mp4"),
-        destination: workingDirectory,
-        progress: { _ in }
-      )
-
-    case "mute":
-      let asset = AVURLAsset(url: first)
-      guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else {
-        throw MediaProcessingError.missingInput
-      }
-      let composition = AVMutableComposition()
-      guard
-        let videoTrack = composition.addMutableTrack(
-          withMediaType: .video,
-          preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-      else {
-        throw MediaProcessingError.writer
-      }
-      let duration = try await asset.load(.duration)
-      try videoTrack.insertTimeRange(
-        CMTimeRange(start: .zero, duration: duration),
-        of: sourceVideo,
-        at: .zero
-      )
-      videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
-      return try await exportAsset(
-        composition,
-        presetName: AVAssetExportPresetPassthrough,
-        fileType: .mp4,
-        filename: outputName(response.output.filename, extension: "mp4"),
-        destination: workingDirectory,
-        progress: { _ in }
-      )
-
-    case "audio", "remux", "proxy", "subtitles", "metadata":
-      return first
-    default:
-      throw MediaProcessingError.unsupportedOperation(response.type)
+    let videoAsset = AVURLAsset(url: video)
+    let audioAsset = AVURLAsset(url: audio)
+    guard let sourceVideo = try await videoAsset.loadTracks(withMediaType: .video).first,
+      let sourceAudio = try await audioAsset.loadTracks(withMediaType: .audio).first
+    else {
+      throw MediaProcessingError.missingInput
     }
+    let composition = AVMutableComposition()
+    guard
+      let videoTrack = composition.addMutableTrack(
+        withMediaType: .video,
+        preferredTrackID: kCMPersistentTrackID_Invalid
+      ),
+      let audioTrack = composition.addMutableTrack(
+        withMediaType: .audio,
+        preferredTrackID: kCMPersistentTrackID_Invalid
+      )
+    else {
+      throw MediaProcessingError.writer
+    }
+    let videoDuration = try await videoAsset.load(.duration)
+    let audioDuration = try await audioAsset.load(.duration)
+    let duration = CMTimeMinimum(videoDuration, audioDuration)
+    try videoTrack.insertTimeRange(
+      CMTimeRange(start: .zero, duration: duration),
+      of: sourceVideo,
+      at: .zero
+    )
+    try audioTrack.insertTimeRange(
+      CMTimeRange(start: .zero, duration: duration),
+      of: sourceAudio,
+      at: .zero
+    )
+    videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
+    return try await exportAsset(
+      composition,
+      presetName: AVAssetExportPresetPassthrough,
+      fileType: .mp4,
+      filename: outputName(filename, extension: "mp4"),
+      destination: workingDirectory,
+      progress: { _ in }
+    )
   }
 
   private func decision(
@@ -324,7 +285,7 @@ public actor LocalMediaProcessor: MediaProcessing {
     case .appleMusicEfficient:
       if ["aac ", "aac", "mp4a"].contains(audioCodec ?? ""),
         ["m4a", "mp4", "aac"].contains(ext),
-        (info.audioBitrate ?? 0) <= 320_000
+        (info.audioBitrate ?? 0) <= 280_000
       {
         return .passthrough
       }

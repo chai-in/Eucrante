@@ -1,10 +1,20 @@
 import Foundation
 
+public enum EucrantePreset: String, Codable, CaseIterable, Identifiable, Sendable {
+  case appleMusicBest = "apple-music-best"
+  case appleMusicEfficient = "apple-music-efficient"
+  case appleVideoBest = "apple-video-best"
+  case appleVideoEfficient = "apple-video-efficient"
+  case custom
+
+  public var id: Self { self }
+}
+
 extension EucrantePreset {
   public var displayName: String {
     switch self {
     case .appleMusicBest: "Music — Best"
-    case .appleMusicEfficient: "Music — AAC 256"
+    case .appleMusicEfficient: "Music — Efficient"
     case .appleVideoBest: "Video — Best"
     case .appleVideoEfficient: "Video — Efficient"
     case .custom: "Custom"
@@ -13,8 +23,8 @@ extension EucrantePreset {
 
   public var shortDetail: String {
     switch self {
-    case .appleMusicBest: "Original or Apple Lossless"
-    case .appleMusicEfficient: "AAC 256 · smaller"
+    case .appleMusicBest: "Best Apple-compatible audio"
+    case .appleMusicEfficient: "Best available AAC · smaller"
     case .appleVideoBest: "Preserve or HEVC"
     case .appleVideoEfficient: "Smaller HEVC"
     case .custom: "Your current settings"
