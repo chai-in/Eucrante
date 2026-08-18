@@ -20,7 +20,7 @@ SwiftUI gives the app native windows, menus, keyboard shortcuts, accessibility, 
 - Handle tunnel, redirect, picker, and API-error responses.
 - Download a selected result into `~/Downloads/Eucrante` using a path-safe, collision-free filename.
 - Keep an in-memory queue of the current session.
-- Authenticate to a private Eucrante deployment with Cloudflare Access credentials stored in Keychain.
+- Authenticate to a private Eucrante deployment with an enrolled WARP session or Cloudflare Access credentials stored in Keychain.
 
 Local merge/transcode responses are modeled but intentionally gated until the AVFoundation/FFmpeg decision in Phase 2 is implemented and tested.
 

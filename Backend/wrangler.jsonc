@@ -5,13 +5,20 @@
   "compatibility_date": "2026-08-18",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "eucrante.tibcon.in",
+      "custom_domain": true
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
   },
   "vars": {
     "AUTH_MODE": "access",
-    "PUBLIC_BASE_URL": "https://eucrante.example.com"
+    "PUBLIC_BASE_URL": "https://eucrante.tibcon.in"
   },
   "r2_buckets": [
     {

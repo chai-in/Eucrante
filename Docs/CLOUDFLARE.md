@@ -53,13 +53,12 @@ The settings screen shows retained object count and byte usage so indefinite ret
 
 ## Authentication
 
-Each deployment owner chooses an Access policy. The Mac app supports Cloudflare Access service-token headers and stores both values in Keychain. The maintainer deployment is stricter:
+Each deployment owner chooses an Access policy. The Mac app supports two private deployment modes:
 
-1. Create a dedicated service token for Eucrante and a **Service Auth** policy.
-2. Require the WARP or Gateway posture check from the enrolled Mac in the same policy when the account supports that selector combination.
-3. Keep the service-token client ID and secret in macOS Keychain.
-4. Disable the `workers.dev` route and expose only an Access-protected custom hostname.
-5. Reject requests that reach the Worker without the Access assertion added by Cloudflare.
+- **WARP session:** an Allow policy includes the intended identity and requires a WARP device-posture rule. Enable WARP authentication for the Access application and route the custom hostname through the matching device profile. No reusable app secret is needed.
+- **Service token:** a Service Auth policy includes a dedicated Eucrante token. When the account supports the selector combination, also require WARP or Gateway posture. Store both token values in macOS Keychain.
+
+The maintainer deployment uses the WARP-session mode. It additionally disables `workers.dev` and preview URLs, exposes only the Access-protected custom hostname, and rejects requests that reach the Worker without the Access assertion added by Cloudflare.
 
 The Worker URL remains unusable to non-matching devices even if discovered. Local development uses a separate localhost configuration and never weakens the production Access policy.
 
@@ -86,7 +85,7 @@ wrangler r2 bucket create eucrante-jobs
 wrangler deploy
 ```
 
-Do not paste a general Cloudflare API token into the app or repository. Wrangler keeps its own deployment authorization; the Mac app receives only the narrowly scoped Access service token.
+Do not paste a general Cloudflare API token into the app or repository. Wrangler keeps its own deployment authorization. In WARP-session mode the Mac app stores only the endpoint; in service-token mode it receives only the narrowly scoped Access token.
 
 ## Operational boundaries
 
