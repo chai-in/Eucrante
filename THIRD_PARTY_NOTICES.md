@@ -16,4 +16,13 @@ Eucrante's build embeds the following unmodified command-line tools. They are se
 - License: MIT License
 - Embedded artifact: upstream macOS architecture-specific `deno` executable
 
-Release archives should include the corresponding upstream license texts. The pinned versions and artifact hashes are recorded in `Scripts/install-local-tools.sh`.
+## FFmpeg
+
+- Project: https://ffmpeg.org/
+- Pinned release: `9.0.1`
+- License: GNU Lesser General Public License 2.1 or later
+- Embedded artifact: locally built, separate minimal `ffmpeg` executable
+- Configuration: GPL, non-free, network, and external codec libraries disabled; native VP9 decoding and Apple VideoToolbox HEVC encoding enabled
+- Corresponding source: exact official source URL and SHA-256 are recorded in `Scripts/build-ffmpeg.sh`
+
+Release archives include the corresponding upstream license texts. Pinned versions, source/artifact hashes, and the reproducible FFmpeg configuration are recorded in `Scripts/install-local-tools.sh` and `Scripts/build-ffmpeg.sh`.

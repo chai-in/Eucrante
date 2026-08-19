@@ -2,5 +2,5 @@ Copyright 2026 project contributors
 
 Original Eucrante code and documentation are provided under Apache License 2.0.
 
-Release builds embed separately distributed yt-dlp and Deno executables. Those
+Release builds embed separately distributed yt-dlp, Deno, and FFmpeg executables. Those
 works retain their own licenses and are documented in THIRD_PARTY_NOTICES.md.

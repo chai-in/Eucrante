@@ -1,3 +1,4 @@
+import EucranteCore
 import SwiftUI
 
 struct AppShellView: View {
@@ -37,7 +38,9 @@ struct AppShellView: View {
       }
     }
     .safeAreaInset(edge: .bottom) {
-      if let status = model.statusMessage {
+      if let job = model.activeJobs.first {
+        activeDownloadBar(job)
+      } else if let status = model.statusMessage {
         HStack(spacing: 10) {
           Image(systemName: "checkmark.circle.fill")
             .foregroundStyle(.green)
@@ -72,5 +75,63 @@ struct AppShellView: View {
         Text(model.errorMessage ?? "An unknown error occurred.")
       }
     )
+  }
+
+  private func activeDownloadBar(_ job: PersistentJob) -> some View {
+    VStack(spacing: 0) {
+      Divider()
+      HStack(spacing: 12) {
+        Image(systemName: "arrow.down.circle.fill")
+          .font(.title2)
+          .foregroundStyle(Color.eucranteAccent)
+
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 7) {
+            Text(job.preset.displayName)
+              .fontWeight(.semibold)
+              .lineLimit(1)
+            Text("·")
+              .foregroundStyle(.tertiary)
+            Text(job.state.displayName)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+            if model.activeJobs.count > 1 {
+              Text("+\(model.activeJobs.count - 1) more")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+            }
+            Spacer(minLength: 0)
+            if let progress = job.progress {
+              Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+          }
+
+          if let progress = job.progress {
+            ProgressView(value: progress)
+              .progressViewStyle(.linear)
+              .accessibilityValue(
+                progress.formatted(.percent.precision(.fractionLength(0))))
+          } else {
+            ProgressView()
+              .progressViewStyle(.linear)
+          }
+        }
+
+        Button("Queue") { selection = .queue }
+          .buttonStyle(.bordered)
+        Button("Cancel", role: .cancel) { model.cancel(job.id) }
+          .buttonStyle(.bordered)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 11)
+      .background(.bar)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(job.preset.displayName), \(job.state.displayName)")
   }
 }

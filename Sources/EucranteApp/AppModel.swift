@@ -49,15 +49,16 @@ final class AppModel: ObservableObject {
       }
     }
   }
-  @Published var browserSessionSource: BrowserSessionSource {
-    didSet { defaults.set(browserSessionSource.rawValue, forKey: Self.browserSessionKey) }
-  }
+  @Published private(set) var youtubeSessionReady = false
+  @Published var showingYouTubeSignIn = false
   @Published private(set) var localToolsReady = false
   @Published private(set) var localToolsMessage = "Checking local media tools…"
   @Published private(set) var isCheckingLocalTools = false
 
   private let localAcquirer: any LocalMediaAcquiring
   private let mediaProcessor: LocalMediaProcessor
+  private let videoTranscoder: AppleVideoTranscoder
+  private let youtubeSessionStore: YouTubeSessionStore
   private let musicImporter = MusicLibraryImporter()
   private let completionNotifier = CompletionNotifier()
   private let jobStore: JobStore
@@ -69,17 +70,20 @@ final class AppModel: ObservableObject {
   private static let outputBookmarkKey = "downloads.output-bookmark.v1"
   private static let maximumConcurrentKey = "jobs.maximum-concurrent"
   private static let notificationsKey = "notifications.completion-enabled"
-  private static let browserSessionKey = "youtube.browser-session.v1"
 
   init(
     defaults: UserDefaults = .standard,
     localAcquirer: any LocalMediaAcquiring = LocalMediaAcquirer(),
     mediaProcessor: LocalMediaProcessor = LocalMediaProcessor(),
+    videoTranscoder: AppleVideoTranscoder = AppleVideoTranscoder(),
+    youtubeSessionStore: YouTubeSessionStore = YouTubeSessionStore(),
     jobStore: JobStore = JobStore()
   ) {
     self.defaults = defaults
     self.localAcquirer = localAcquirer
     self.mediaProcessor = mediaProcessor
+    self.videoTranscoder = videoTranscoder
+    self.youtubeSessionStore = youtubeSessionStore
     self.jobStore = jobStore
     preferences =
       defaults.data(forKey: Self.preferencesKey)
@@ -87,14 +91,13 @@ final class AppModel: ObservableObject {
       ?? DownloadPreferences()
     maximumConcurrentJobs = min(max(1, defaults.integer(forKey: Self.maximumConcurrentKey)), 4)
     completionNotificationsEnabled = defaults.bool(forKey: Self.notificationsKey)
-    browserSessionSource =
-      BrowserSessionSource(
-        rawValue: defaults.string(forKey: Self.browserSessionKey) ?? "none") ?? .none
     destinationDirectory = Self.resolveDestination(from: defaults)
 
     Task {
+      purgeTransientCookieExports()
       await loadHistory()
       await refreshLocalToolStatus()
+      await refreshYouTubeSession()
     }
   }
 
@@ -120,6 +123,12 @@ final class AppModel: ObservableObject {
       sourceURL = try SourceURLValidator.validate(sourceText)
     } catch {
       errorMessage = userMessage(for: error)
+      return
+    }
+
+    if Self.isYouTube(sourceURL), !youtubeSessionReady {
+      showingYouTubeSignIn = true
+      statusMessage = "Sign in inside Eucrante to save from YouTube. Your link is still ready."
       return
     }
 
@@ -225,11 +234,58 @@ final class AppModel: ObservableObject {
       let runtime =
         status.runtimeVersion?.split(separator: " ").prefix(2).joined(separator: " ")
         ?? "ready"
-      localToolsMessage = "Ready · downloader \(downloader) · \(runtime)"
+      let transcoder =
+        status.transcoderVersion?.split(separator: " ").prefix(3).joined(separator: " ")
+        ?? "converter ready"
+      localToolsMessage = "Ready · downloader \(downloader) · \(runtime) · \(transcoder)"
       drainQueue()
     } else {
       localToolsMessage = "Local media tools are missing. Reinstall Eucrante or rebuild the app."
     }
+  }
+
+  func openYouTubeSignIn() {
+    showingYouTubeSignIn = true
+  }
+
+  func openPasswordsApp() {
+    guard
+      let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Passwords")
+    else {
+      errorMessage =
+        "Open Passwords in System Settings, copy your Google login, then paste it here."
+      return
+    }
+    let configuration = NSWorkspace.OpenConfiguration()
+    NSWorkspace.shared.openApplication(at: url, configuration: configuration) {
+      [weak self] _, error in
+      guard let error else { return }
+      Task { @MainActor [weak self] in
+        self?.errorMessage = "Apple Passwords could not be opened: \(error.localizedDescription)"
+      }
+    }
+  }
+
+  func finishYouTubeSignIn() {
+    showingYouTubeSignIn = false
+    Task {
+      await refreshYouTubeSession()
+      if youtubeSessionReady {
+        statusMessage = "YouTube is signed in and ready."
+      } else {
+        errorMessage = "YouTube sign-in was not completed. Sign in inside Eucrante and try again."
+      }
+    }
+  }
+
+  func refreshYouTubeSession() async {
+    youtubeSessionReady = await youtubeSessionStore.hasAuthenticatedSession()
+  }
+
+  func signOutOfYouTube() async {
+    await youtubeSessionStore.clear()
+    youtubeSessionReady = false
+    statusMessage = "Removed Eucrante's private YouTube session."
   }
 
   func reveal(_ url: URL) {
@@ -264,7 +320,7 @@ final class AppModel: ObservableObject {
         ?? "development",
       macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
       localToolsReady: localToolsReady,
-      browserSession: browserSessionSource.rawValue,
+      authenticatedYouTubeSession: youtubeSessionReady,
       destinationAvailable: (try? destinationDirectory.checkResourceIsReachable()) ?? false,
       jobStateCounts: stateCounts,
       preferences: preferences
@@ -339,14 +395,25 @@ final class AppModel: ObservableObject {
         $0.stagingPath = staging.path
         $0.updatedAt = .now
       }
-      let result = try await localAcquirer.acquire(
-        sourceURL: job.sourceURL,
-        preset: job.preset,
-        preferences: jobPreferences,
-        browserSession: browserSessionSource,
-        workingDirectory: staging,
-        progress: localAcquisitionProgressHandler(for: job.id)
-      )
+      let cookieFile =
+        youtubeSessionReady
+        ? try await youtubeSessionStore.exportCookieFile(to: staging)
+        : nil
+      let result: LocalAcquisitionResult
+      do {
+        result = try await localAcquirer.acquire(
+          sourceURL: job.sourceURL,
+          preset: job.preset,
+          preferences: jobPreferences,
+          cookieFile: cookieFile,
+          workingDirectory: staging,
+          progress: localAcquisitionProgressHandler(for: job.id)
+        )
+      } catch {
+        if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
+        throw error
+      }
+      if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
       switch result {
       case .single(let input, let filename):
         try await finalize(input, filename: filename, job: job, destination: jobDestination)
@@ -363,6 +430,27 @@ final class AppModel: ObservableObject {
           workingDirectory: staging
         )
         try await finalize(merged, filename: filename, job: job, destination: jobDestination)
+      case .transcode(let video, let audio, let filename, let duration, let quality):
+        update(job.id) {
+          $0.state = .processing
+          $0.progress = 0
+          $0.updatedAt = .now
+        }
+        let converted = try await videoTranscoder.transcode(
+          video: video,
+          audio: audio,
+          duration: duration,
+          quality: quality,
+          workingDirectory: staging,
+          progress: processingProgressHandler(for: job.id)
+        )
+        try await finalize(
+          converted,
+          filename: filename,
+          job: job,
+          destination: jobDestination,
+          processedDecision: .transcodeHEVC
+        )
       }
     } catch is CancellationError {
       update(jobID) {
@@ -379,11 +467,22 @@ final class AppModel: ObservableObject {
     _ input: URL,
     filename: String,
     job: PersistentJob,
-    destination: URL
+    destination: URL,
+    processedDecision: MediaDecision? = nil
   ) async throws {
     let output: URL
     let decision: MediaDecision
-    if job.preset.requiresLocalVerification {
+    if let processedDecision {
+      let processed = try await mediaProcessor.process(
+        input,
+        preset: .custom,
+        suggestedFilename: filename,
+        destination: destination,
+        progress: processingProgressHandler(for: job.id)
+      )
+      output = processed.url
+      decision = processedDecision
+    } else if job.preset.requiresLocalVerification {
       update(job.id) {
         $0.state = .processing
         $0.progress = 0
@@ -449,6 +548,7 @@ final class AppModel: ObservableObject {
       $0.errorMessage = nil
       $0.updatedAt = .now
     }
+    statusMessage = "Saved \(output.lastPathComponent)"
 
     if job.stagingPath != nil {
       try? FileManager.default.removeItem(at: stagingDirectory(for: jobID))
@@ -545,6 +645,10 @@ final class AppModel: ObservableObject {
   }
 
   private func stagingDirectory(for jobID: UUID) -> URL {
+    jobsRootDirectory.appendingPathComponent(jobID.uuidString, isDirectory: true)
+  }
+
+  private var jobsRootDirectory: URL {
     let base =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? FileManager.default.temporaryDirectory
@@ -552,7 +656,22 @@ final class AppModel: ObservableObject {
       base
       .appendingPathComponent("Eucrante", isDirectory: true)
       .appendingPathComponent("Jobs", isDirectory: true)
-      .appendingPathComponent(jobID.uuidString, isDirectory: true)
+  }
+
+  private func purgeTransientCookieExports() {
+    guard
+      let jobDirectories = try? FileManager.default.contentsOfDirectory(
+        at: jobsRootDirectory,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      )
+    else { return }
+    for directory in jobDirectories {
+      let cookieFile = directory.appendingPathComponent(".eucrante-youtube-cookies.txt")
+      if FileManager.default.fileExists(atPath: cookieFile.path) {
+        try? FileManager.default.removeItem(at: cookieFile)
+      }
+    }
   }
 
   private func removeStagingData(for job: PersistentJob) {
@@ -566,7 +685,7 @@ final class AppModel: ObservableObject {
     let appVersion: String
     let macOSVersion: String
     let localToolsReady: Bool
-    let browserSession: String
+    let authenticatedYouTubeSession: Bool
     let destinationAvailable: Bool
     let jobStateCounts: [String: Int]
     let preferences: DownloadPreferences
@@ -597,5 +716,10 @@ final class AppModel: ObservableObject {
       defaults.set(refreshed, forKey: outputBookmarkKey)
     }
     return resolved.url
+  }
+
+  private static func isYouTube(_ url: URL) -> Bool {
+    guard let host = url.host?.lowercased() else { return false }
+    return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
   }
 }

@@ -3,10 +3,11 @@
 ## Working now
 
 - Native SwiftUI app shell and four Apple-oriented one-click policies.
-- Local pinned `yt-dlp` and Deno helper installation, embedding, and nested code signing.
-- Explicit Brave/Chrome/Firefox/Safari session selection.
-- Local H.264 + AAC acquisition, AVFoundation merge, inspection, output verification, cancellation, queue/history, Finder, Trash, notifications, and Music import.
-- Exact YouTube/Brave end-to-end developer check.
+- Local pinned `yt-dlp`, Deno, and reproducibly built LGPL FFmpeg helper installation, embedding, and nested code signing.
+- Optional private in-app YouTube session with no external-browser dependency.
+- Lossless local H.264 + AAC through 1080p, plus VP9-to-Apple-hardware-HEVC for verified 4K SDR output.
+- AVFoundation inspection, output verification, cancellation, queue/history, Finder, Trash, notifications, and Music import.
+- Exact local YouTube end-to-end developer check.
 
 ## Before the first public binary
 
@@ -18,6 +19,6 @@
 
 ## Later
 
-- Reproducible LGPL-compatible transcoder build for verified 4K/HDR HEVC output.
+- Verified AV1 input and HDR/color-metadata preservation after licensed fixtures pass.
 - Metadata and artwork editing with before/after previews.
 - Additional providers only after their local extraction and legal boundaries are tested.

@@ -12,13 +12,15 @@ Eucrante has no Worker, server, container, R2 bucket, localhost process, or rela
 
 Use the official `yt-dlp_macos` release behind the narrow `LocalMediaAcquiring` protocol. Do not copy an upstream web client/server or interpolate input into a shell. Pin and verify every bundled artifact.
 
-## ADR-004: Opt-in browser session
+## ADR-004: Opt-in app-owned YouTube session
 
-Browser session use is disabled by default and selected in Settings. The helper reads the browser's current session directly; Eucrante does not create a cookie export or send credentials elsewhere.
+Authenticated use is disabled by default. Sign-in occurs inside Eucrante using the app's private persistent WebKit store. Eucrante does not read an external browser. A permission-restricted Netscape cookie file is created inside the opaque job folder only for helper acquisition and is removed immediately on success or failure.
 
-## ADR-005: Apple-compatible first video path
+Apple Password AutoFill suggestions require a reciprocal `webcredentials` association controlled by the website. Eucrante cannot legitimately claim Google or YouTube domains, so the sign-in sheet provides **Open Passwords** for user-controlled, Touch ID-protected copy/paste. Eucrante must not add a false associated-domain entitlement or programmatically extract credentials from Apple Passwords.
 
-Ship lossless merging of the best H.264 MP4 and AAC M4A tracks first. Add 4K VP9/AV1-to-HEVC only with a reproducible, appropriately licensed transcoder build and golden SDR/HDR fixtures.
+## ADR-005: Apple-compatible wide video path
+
+Losslessly merge H.264 MP4 and AAC M4A through 1080p. For 1440p/4K, prefer VP9 and convert it to `hvc1` HEVC with Apple VideoToolbox. Build a separate minimal FFmpeg executable from pinned official source under LGPL 2.1 or later with GPL, non-free, network, and external codec libraries disabled. Do not use x265. Add AV1 and claim HDR only after their decoder and color fixtures are verified.
 
 ## ADR-006: Apache-2.0
 

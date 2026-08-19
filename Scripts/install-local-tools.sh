@@ -67,4 +67,6 @@ if ! matches_checksum "$tools_directory/deno" "$deno_binary_sha256"; then
   ditto "$temporary_directory/deno/deno" "$tools_directory/deno"
 fi
 
+"$project_root/Scripts/build-ffmpeg.sh"
+
 echo "Local media tools are ready in $tools_directory"

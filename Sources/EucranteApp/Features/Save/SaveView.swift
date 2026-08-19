@@ -77,9 +77,11 @@ struct SaveView: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+        .frame(maxWidth: 600, alignment: .leading)
       }
-      .padding(32)
-      .frame(maxWidth: .infinity, minHeight: 500)
+      .padding(.horizontal, 32)
+      .padding(.vertical, 24)
+      .frame(maxWidth: .infinity)
     }
     .navigationTitle("Save")
     .dropDestination(for: URL.self) { urls, _ in
@@ -140,11 +142,13 @@ struct SaveView: View {
           Text(preset.shortDetail)
             .font(.caption)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         Spacer(minLength: 0)
       }
-      .padding(12)
-      .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.bordered)

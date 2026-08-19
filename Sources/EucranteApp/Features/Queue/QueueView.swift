@@ -72,7 +72,7 @@ private struct JobRow: View {
 
         if job.state.isActive, let progress = job.progress {
           ProgressView(value: progress)
-            .accessibilityLabel(job.state.title)
+            .accessibilityLabel(job.state.displayName)
             .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0))))
         }
       }
@@ -166,27 +166,11 @@ private struct JobRow: View {
       let formatter = ByteCountFormatter()
       let current = formatter.string(fromByteCount: completed)
       if let expected = job.bytesExpected, expected > 0 {
-        return "\(job.state.title) · \(current) of \(formatter.string(fromByteCount: expected))"
+        return
+          "\(job.state.displayName) · \(current) of \(formatter.string(fromByteCount: expected))"
       }
-      return "\(job.state.title) · \(current)"
+      return "\(job.state.displayName) · \(current)"
     }
-    return job.state.title
-  }
-}
-
-extension PersistentJob.State {
-  fileprivate var title: String {
-    switch self {
-    case .queued: "Queued"
-    case .resolving: "Preparing"
-    case .awaitingSelection: "Choose an item"
-    case .downloading: "Downloading"
-    case .processing: "Optimizing for Apple devices"
-    case .verifying: "Checking the finished file"
-    case .uploading: "Finishing"
-    case .completed: "Completed"
-    case .failed: "Failed"
-    case .cancelled: "Cancelled"
-    }
+    return job.state.displayName
   }
 }

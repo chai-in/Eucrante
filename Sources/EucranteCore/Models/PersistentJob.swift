@@ -19,6 +19,21 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
       case .awaitingSelection, .completed, .failed, .cancelled: false
       }
     }
+
+    public var displayName: String {
+      switch self {
+      case .queued: "Queued"
+      case .resolving: "Preparing"
+      case .awaitingSelection: "Choose an item"
+      case .downloading: "Downloading"
+      case .processing: "Optimizing for Apple devices"
+      case .verifying: "Checking the finished file"
+      case .uploading: "Finishing"
+      case .completed: "Completed"
+      case .failed: "Failed"
+      case .cancelled: "Cancelled"
+      }
+    }
   }
 
   public let id: UUID

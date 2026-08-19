@@ -26,7 +26,8 @@ let package = Package(
       name: "EucranteApp",
       dependencies: ["EucranteCore"],
       linkerSettings: [
-        .linkedFramework("UserNotifications")
+        .linkedFramework("UserNotifications"),
+        .linkedFramework("WebKit"),
       ]
     ),
     .executableTarget(

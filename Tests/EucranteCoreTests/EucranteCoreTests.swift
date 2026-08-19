@@ -78,7 +78,47 @@ final class EucranteCoreTests: XCTestCase {
     let video = EucrantePreset.appleVideoBest.requestPreferences(from: custom)
     XCTAssertEqual(video.downloadMode, .automatic)
     XCTAssertEqual(video.videoQuality, .maximum)
+    XCTAssertEqual(video.youtubeVideoCodec, .vp9)
     XCTAssertEqual(video.youtubeVideoContainer, .mp4)
+    XCTAssertTrue(video.allowH265)
+  }
+
+  func testVideoSelectorPreservesH264FastPathThrough1080p() {
+    let selector = LocalMediaAcquirer.videoFormatSelector(videoQuality: .p1080)
+    XCTAssertTrue(selector.hasPrefix("bestvideo[vcodec^=avc1]"))
+    XCTAssertFalse(selector.contains("vp9"))
+    XCTAssertTrue(selector.contains("height<=1080"))
+  }
+
+  func testVideoSelectorPrefersVP9For1440pAndAbove() {
+    for quality in [VideoQuality.p1440, .p2160, .p4320, .maximum] {
+      let selector = LocalMediaAcquirer.videoFormatSelector(videoQuality: quality)
+      XCTAssertTrue(selector.hasPrefix("bestvideo[vcodec^=vp9]"))
+      XCTAssertTrue(selector.contains("bestvideo[vcodec^=avc1]"))
+    }
+    XCTAssertTrue(
+      LocalMediaAcquirer.videoFormatSelector(videoQuality: .p2160).contains("height<=2160"))
+  }
+
+  func testWideVideoConversionUsesAppleHardwareHEVCWithoutGPLCodec() {
+    let arguments = AppleVideoTranscoder.arguments(
+      video: URL(fileURLWithPath: "/tmp/source.webm"),
+      audio: URL(fileURLWithPath: "/tmp/audio.m4a"),
+      output: URL(fileURLWithPath: "/tmp/output.mp4"),
+      quality: .best
+    )
+    XCTAssertTrue(arguments.contains("hevc_videotoolbox"))
+    XCTAssertTrue(arguments.contains("hvc1"))
+    XCTAssertTrue(arguments.contains("copy"))
+    XCTAssertFalse(arguments.contains("libx265"))
+    XCTAssertEqual(arguments.last, "/tmp/output.mp4")
+  }
+
+  func testWideVideoConversionProgressParsing() {
+    let parsed = AppleVideoTranscoder.parseProgressTime("out_time_us=1250000")
+    XCTAssertNotNil(parsed)
+    XCTAssertEqual(parsed ?? 0, 1.25, accuracy: 0.0001)
+    XCTAssertNil(AppleVideoTranscoder.parseProgressTime("progress=continue"))
   }
 
   func testJobStoreRoundTrip() async throws {

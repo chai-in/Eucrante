@@ -2,14 +2,15 @@
 
 Eucrante is a native macOS app for saving media directly on your Mac. There is no server, account, localhost service, Cloudflare setup, relay PC, or remote job store.
 
-The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bundled Deno runtime for YouTube's JavaScript challenges, and Apple frameworks for inspection, merging, conversion, notifications, Finder integration, and Music import. Eucrante means “bringer of fulfillment” and is named for a Nereid of successful voyages.
+The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bundled Deno runtime for YouTube's JavaScript challenges, a minimal LGPL FFmpeg build for VP9 decoding, and Apple frameworks for HEVC encoding, inspection, merging, notifications, Finder integration, and Music import. Eucrante means “bringer of fulfillment” and is named for a Nereid of successful voyages.
 
 ## Current product
 
 - Four one-click Apple output policies: Music Best, Music Efficient, Video Best, and Video Efficient.
-- Local YouTube downloads with optional use of a Brave, Chrome, Firefox, or Safari session selected by the user.
-- YouTube Premium formats are requested from the same Mac and network context as the selected browser.
-- Separate H.264 video and AAC audio tracks are merged locally without generation loss.
+- Local YouTube downloads with an optional private YouTube sign-in inside Eucrante.
+- YouTube Premium formats are requested from the same app and Mac network context; Eucrante never reads another browser's files.
+- H.264 through 1080p is merged with AAC locally without generation loss.
+- 1440p and 4K VP9 sources are converted locally to Apple-native HEVC/H.265 with hardware encoding; compatible AAC is copied without another lossy audio encode.
 - Finished files are inspected before the job is marked complete.
 - Local queue/history, cancellation, retry, custom output folder, Finder reveal, Trash, notifications, and explicit Music import.
 - Filename-style previews in Settings that match the actual saved names.
@@ -27,15 +28,16 @@ swift run EucranteCoreChecks
 make app
 ```
 
-`make app` downloads the exact pinned helper releases, verifies their SHA-256 checksums, embeds them under `Eucrante.app/Contents/Resources/Tools`, signs the nested executables, and then signs the app. Development copies live only under `.build/eucrante-tools` and are not committed.
+`make app` downloads the exact pinned helper releases, verifies their SHA-256 checksums, builds FFmpeg 9.0.1 from its verified official source with GPL and non-free components disabled, embeds the tools under `Eucrante.app/Contents/Resources/Tools`, signs the nested executables, and then signs the app. Development copies live only under `.build/eucrante-tools` and are not committed.
 
 For the opt-in live YouTube check:
 
 ```sh
 EUCRANTE_E2E_URL='https://www.youtube.com/watch?v=…' \
-EUCRANTE_E2E_BROWSER=brave \
 swift run EucranteCoreChecks
 ```
+
+Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass a temporary Netscape cookie file with `EUCRANTE_E2E_COOKIE_FILE`; the shipping app creates and immediately deletes its own file from its private WebKit session.
 
 ## Architecture and product notes
 

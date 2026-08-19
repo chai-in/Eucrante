@@ -1,50 +1,34 @@
 @preconcurrency import Foundation
 
-public enum BrowserSessionSource: String, Codable, CaseIterable, Identifiable, Sendable {
-  case none
-  case brave
-  case chrome
-  case firefox
-  case safari
-
-  public var id: Self { self }
-
-  public var displayName: String {
-    switch self {
-    case .none: "Do not use a browser session"
-    case .brave: "Brave"
-    case .chrome: "Google Chrome"
-    case .firefox: "Firefox"
-    case .safari: "Safari"
-    }
-  }
-
-  fileprivate var ytDLPName: String? {
-    switch self {
-    case .none: nil
-    case .brave: "brave"
-    case .chrome: "chrome"
-    case .firefox: "firefox"
-    case .safari: "safari"
-    }
-  }
-}
-
 public struct LocalToolStatus: Equatable, Sendable {
   public let ready: Bool
   public let downloaderVersion: String?
   public let runtimeVersion: String?
+  public let transcoderVersion: String?
 
-  public init(ready: Bool, downloaderVersion: String?, runtimeVersion: String?) {
+  public init(
+    ready: Bool,
+    downloaderVersion: String?,
+    runtimeVersion: String?,
+    transcoderVersion: String?
+  ) {
     self.ready = ready
     self.downloaderVersion = downloaderVersion
     self.runtimeVersion = runtimeVersion
+    self.transcoderVersion = transcoderVersion
   }
 }
 
 public enum LocalAcquisitionResult: Equatable, Sendable {
   case single(url: URL, suggestedFilename: String)
   case merge(video: URL, audio: URL, suggestedFilename: String)
+  case transcode(
+    video: URL,
+    audio: URL?,
+    suggestedFilename: String,
+    duration: Double?,
+    quality: AppleVideoTranscodeQuality
+  )
 }
 
 public struct LocalAcquisitionProgress: Equatable, Sendable {
@@ -65,7 +49,7 @@ public protocol LocalMediaAcquiring: Sendable {
     sourceURL: URL,
     preset: EucrantePreset,
     preferences: DownloadPreferences,
-    browserSession: BrowserSessionSource,
+    cookieFile: URL?,
     workingDirectory: URL,
     progress: @escaping @Sendable (LocalAcquisitionProgress) -> Void
   ) async throws -> LocalAcquisitionResult
@@ -75,10 +59,12 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
   public struct ToolPaths: Equatable, Sendable {
     public let ytDLP: URL
     public let deno: URL
+    public let ffmpeg: URL
 
-    public init(ytDLP: URL, deno: URL) {
+    public init(ytDLP: URL, deno: URL, ffmpeg: URL) {
       self.ytDLP = ytDLP
       self.deno = deno
+      self.ffmpeg = ffmpeg
     }
 
     public static func discover(
@@ -104,7 +90,8 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
 
       return ToolPaths(
         ytDLP: executable("EUCRANTE_YTDLP_PATH", name: "yt-dlp"),
-        deno: executable("EUCRANTE_DENO_PATH", name: "deno")
+        deno: executable("EUCRANTE_DENO_PATH", name: "deno"),
+        ffmpeg: executable("EUCRANTE_FFMPEG_PATH", name: "ffmpeg")
       )
     }
   }
@@ -120,7 +107,12 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
 
   public func toolStatus() async -> LocalToolStatus {
     guard toolsAreExecutable else {
-      return LocalToolStatus(ready: false, downloaderVersion: nil, runtimeVersion: nil)
+      return LocalToolStatus(
+        ready: false,
+        downloaderVersion: nil,
+        runtimeVersion: nil,
+        transcoderVersion: nil
+      )
     }
     let ytDLPVersion = try? await runner.run(
       executable: tools.ytDLP,
@@ -132,10 +124,16 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       arguments: ["--version"],
       onLine: { _ in }
     ).first
+    let ffmpegVersion = try? await runner.run(
+      executable: tools.ffmpeg,
+      arguments: ["-version"],
+      onLine: { _ in }
+    ).first
     return LocalToolStatus(
-      ready: ytDLPVersion != nil && denoVersion != nil,
+      ready: ytDLPVersion != nil && denoVersion != nil && ffmpegVersion != nil,
       downloaderVersion: ytDLPVersion,
-      runtimeVersion: denoVersion
+      runtimeVersion: denoVersion,
+      transcoderVersion: ffmpegVersion
     )
   }
 
@@ -143,7 +141,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     sourceURL: URL,
     preset: EucrantePreset,
     preferences: DownloadPreferences,
-    browserSession: BrowserSessionSource,
+    cookieFile: URL?,
     workingDirectory: URL,
     progress: @escaping @Sendable (LocalAcquisitionProgress) -> Void
   ) async throws -> LocalAcquisitionResult {
@@ -157,7 +155,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
         sourceURL: sourceURL,
         kind: .audio(maximumBitrate: preset == .appleMusicEfficient ? 256 : nil),
         prefix: "audio",
-        browserSession: browserSession,
+        cookieFile: cookieFile,
         videoQuality: preferences.videoQuality,
         workingDirectory: workingDirectory,
         progressScale: 0...1,
@@ -177,13 +175,27 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       sourceURL: sourceURL,
       kind: .video,
       prefix: "video",
-      browserSession: browserSession,
+      cookieFile: cookieFile,
       videoQuality: preferences.videoQuality,
       workingDirectory: workingDirectory,
       progressScale: mute ? 0...1 : 0...0.5,
       progress: progress
     )
     if mute {
+      if video.requiresHEVCTranscode {
+        return .transcode(
+          video: video.url,
+          audio: nil,
+          suggestedFilename: preferences.filenameStyle.filename(
+            title: video.title,
+            creator: video.creator,
+            sourceID: video.sourceID,
+            pathExtension: "mp4"
+          ),
+          duration: video.duration,
+          quality: preset == .appleVideoEfficient ? .efficient : .best
+        )
+      }
       return .single(
         url: video.url,
         suggestedFilename: preferences.filenameStyle.filename(
@@ -198,21 +210,32 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       sourceURL: sourceURL,
       kind: .audio(maximumBitrate: preset == .appleVideoEfficient ? 256 : nil),
       prefix: "audio",
-      browserSession: browserSession,
+      cookieFile: cookieFile,
       videoQuality: preferences.videoQuality,
       workingDirectory: workingDirectory,
       progressScale: 0.5...1,
       progress: progress
     )
+    let filename = preferences.filenameStyle.filename(
+      title: video.title,
+      creator: video.creator,
+      sourceID: video.sourceID,
+      pathExtension: "mp4"
+    )
+    if video.requiresHEVCTranscode {
+      return .transcode(
+        video: video.url,
+        audio: audio.url,
+        suggestedFilename: filename,
+        duration: video.duration,
+        quality: preset == .appleVideoEfficient ? .efficient : .best
+      )
+    }
     return .merge(
       video: video.url,
       audio: audio.url,
-      suggestedFilename: preferences.filenameStyle.filename(
-        title: video.title,
-        creator: video.creator,
-        sourceID: video.sourceID,
-        pathExtension: "mp4"
-      ))
+      suggestedFilename: filename
+    )
   }
 
   private enum DownloadKind {
@@ -222,8 +245,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     func formatSelector(videoQuality: VideoQuality) -> String {
       switch self {
       case .video:
-        let height = videoQuality == .maximum ? "" : "[height<=\(videoQuality.rawValue)]"
-        return "bestvideo[vcodec^=avc1][ext=mp4]\(height)/best[vcodec^=avc1][ext=mp4]\(height)"
+        return LocalMediaAcquirer.videoFormatSelector(videoQuality: videoQuality)
       case .audio(let maximumBitrate):
         let bestAppleAudio =
           "bestaudio[acodec^=mp4a][ext=m4a]/bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]"
@@ -242,13 +264,30 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     let title: String
     let creator: String?
     let sourceID: String?
+    let codec: String?
+    let duration: Double?
+
+    var requiresHEVCTranscode: Bool {
+      let normalized = codec?.lowercased() ?? ""
+      return normalized.hasPrefix("vp9") || normalized.hasPrefix("vp09")
+    }
+  }
+
+  static func videoFormatSelector(videoQuality: VideoQuality) -> String {
+    let height = videoQuality == .maximum ? "" : "[height<=\(videoQuality.rawValue)]"
+    let appleFallback =
+      "bestvideo[vcodec^=avc1][ext=mp4]\(height)/best[vcodec^=avc1][ext=mp4]\(height)"
+    guard videoQuality.prefersWideVideoCodec else { return appleFallback }
+    return
+      "bestvideo[vcodec^=vp9][dynamic_range=SDR]\(height)/"
+      + "bestvideo[vcodec^=vp09][dynamic_range=SDR]\(height)/\(appleFallback)"
   }
 
   private func download(
     sourceURL: URL,
     kind: DownloadKind,
     prefix: String,
-    browserSession: BrowserSessionSource,
+    cookieFile: URL?,
     videoQuality: VideoQuality,
     workingDirectory: URL,
     progressScale: ClosedRange<Double>,
@@ -267,11 +306,13 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       "--print", "before_dl:EUCRANTE_TITLE:%(title)s",
       "--print", "before_dl:EUCRANTE_CREATOR:%(uploader|)s",
       "--print", "before_dl:EUCRANTE_ID:%(id)s",
+      "--print", "before_dl:EUCRANTE_VCODEC:%(vcodec|)s",
+      "--print", "before_dl:EUCRANTE_DURATION:%(duration|)s",
       "--progress-template",
       "download:EUCRANTE_PROGRESS:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.total_bytes_estimate)s",
     ]
-    if let browser = browserSession.ytDLPName {
-      arguments.append(contentsOf: ["--cookies-from-browser", browser])
+    if let cookieFile {
+      arguments.append(contentsOf: ["--cookies", cookieFile.path])
     }
     arguments.append(sourceURL.absoluteString)
 
@@ -283,6 +324,12 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
         metadata.setCreator(String(line.dropFirst("EUCRANTE_CREATOR:".count)))
       } else if line.hasPrefix("EUCRANTE_ID:") {
         metadata.setSourceID(String(line.dropFirst("EUCRANTE_ID:".count)))
+      } else if line.hasPrefix("EUCRANTE_VCODEC:") {
+        metadata.setCodec(String(line.dropFirst("EUCRANTE_VCODEC:".count)))
+      } else if line.hasPrefix("EUCRANTE_DURATION:") {
+        metadata.setDuration(
+          Double(String(line.dropFirst("EUCRANTE_DURATION:".count)))
+        )
       } else if let parsed = Self.parseProgress(line) {
         let lower = progressScale.lowerBound
         let width = progressScale.upperBound - lower
@@ -304,13 +351,16 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       url: output,
       title: title,
       creator: values.creator,
-      sourceID: values.sourceID
+      sourceID: values.sourceID,
+      codec: values.codec,
+      duration: values.duration
     )
   }
 
   private var toolsAreExecutable: Bool {
     fileManager.isExecutableFile(atPath: tools.ytDLP.path)
       && fileManager.isExecutableFile(atPath: tools.deno.path)
+      && fileManager.isExecutableFile(atPath: tools.ffmpeg.path)
   }
 
   private func outputFile(prefix: String, in directory: URL) throws -> URL? {
@@ -347,6 +397,9 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
 public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
   case toolsMissing
   case processFailed(Int32)
+  case authenticationRequired
+  case accessDenied
+  case formatUnavailable
   case outputMissing
 
   public var errorDescription: String? {
@@ -354,7 +407,13 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
     case .toolsMissing:
       "Eucrante's local media tools are missing or damaged. Reinstall the app."
     case .processFailed:
-      "The local media downloader could not finish this link. Check the browser session and try again."
+      "The local media downloader could not finish this link. Refresh Eucrante's YouTube sign-in and try again."
+    case .authenticationRequired:
+      "YouTube requires a fresh sign-in for this link. Open Eucrante's YouTube settings and sign in again."
+    case .accessDenied:
+      "YouTube refused the media transfer. Refresh Eucrante's private YouTube sign-in and retry the job."
+    case .formatUnavailable:
+      "This link does not currently expose media that matches the selected output. Try another preset."
     case .outputMissing:
       "The provider returned no usable media file."
     }
@@ -366,14 +425,31 @@ private final class LockedMetadata: @unchecked Sendable {
   private var title: String?
   private var creator: String?
   private var sourceID: String?
+  private var codec: String?
+  private var duration: Double?
 
-  var values: (title: String?, creator: String?, sourceID: String?) {
-    lock.withLock { (title, creator, sourceID) }
+  var values:
+    (
+      title: String?, creator: String?, sourceID: String?, codec: String?, duration: Double?
+    )
+  {
+    lock.withLock { (title, creator, sourceID, codec, duration) }
   }
 
   func setTitle(_ value: String) { lock.withLock { title = value } }
   func setCreator(_ value: String) { lock.withLock { creator = value } }
   func setSourceID(_ value: String) { lock.withLock { sourceID = value } }
+  func setCodec(_ value: String) { lock.withLock { codec = value } }
+  func setDuration(_ value: Double?) { lock.withLock { duration = value } }
+}
+
+extension VideoQuality {
+  fileprivate var prefersWideVideoCodec: Bool {
+    switch self {
+    case .maximum, .p4320, .p2160, .p1440: true
+    case .p1080, .p720, .p480, .p360, .p240, .p144: false
+    }
+  }
 }
 
 private final class RunningProcess: @unchecked Sendable {
@@ -421,6 +497,19 @@ private actor LocalProcessRunner {
       process.waitUntilExit()
       try Task.checkCancellation()
       guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+        let diagnostic = lines.joined(separator: "\n").lowercased()
+        if diagnostic.contains("sign in to confirm")
+          || diagnostic.contains("login required")
+          || diagnostic.contains("cookies are no longer valid")
+        {
+          throw LocalAcquisitionError.authenticationRequired
+        }
+        if diagnostic.contains("http error 403") || diagnostic.contains("forbidden") {
+          throw LocalAcquisitionError.accessDenied
+        }
+        if diagnostic.contains("requested format is not available") {
+          throw LocalAcquisitionError.formatUnavailable
+        }
         throw LocalAcquisitionError.processFailed(process.terminationStatus)
       }
       return lines

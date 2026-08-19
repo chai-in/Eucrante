@@ -19,11 +19,11 @@ Eucrante should feel like a normal Mac utility: paste, choose an output, and sav
 
 ## YouTube Premium
 
-Browser use is explicit and off by default. Choosing Brave, Chrome, Firefox, or Safari authorizes the local helper to read that browser's signed-in session and present applicable cookies only to the selected provider for the requested download. Eucrante has no service that receives them and does not log or persist them. Premium membership does not guarantee that every video exposes a distinct Premium-labelled format.
+YouTube sign-in is explicit and off by default. Before creating a YouTube job without a usable session, Eucrante opens its dedicated sign-in window and retains the entered link instead of starting a job that is likely to fail anonymously. The window is backed by the app's private WebKit data store. Eucrante never requests access to Brave, Safari, Chrome, Firefox, or another browser. Applicable cookies are exposed to the bundled downloader only through a permission-restricted per-job file that is deleted immediately after acquisition. Eucrante has no service that receives them and does not log or retain the export. Premium membership does not guarantee that every video exposes a distinct Premium-labelled format.
 
 ## Definition of done
 
 - A fresh app build includes verified local helpers and needs no infrastructure setup.
 - The exact live YouTube fixture completes through acquisition, local merge, and AVFoundation inspection.
 - Cancellation stops the child process and a retry uses the same opaque staging boundary.
-- Diagnostics contain tool/browser choices and state counts, but no source URLs, cookies, media, or personal output paths.
+- Diagnostics contain tool readiness, whether an in-app YouTube session exists, preferences, and state counts, but no source URLs, cookies, media, or personal output paths.

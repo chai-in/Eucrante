@@ -25,8 +25,8 @@ extension EucrantePreset {
     switch self {
     case .appleMusicBest: "Best Apple-compatible audio"
     case .appleMusicEfficient: "Best available AAC · smaller"
-    case .appleVideoBest: "Preserve or HEVC"
-    case .appleVideoEfficient: "Smaller HEVC"
+    case .appleVideoBest: "Best source · up to 4K HEVC"
+    case .appleVideoEfficient: "Storage-balanced HEVC"
     case .custom: "Your current settings"
     }
   }
@@ -51,8 +51,9 @@ extension EucrantePreset {
       value.audioBitrate = self == .appleMusicEfficient ? .kbps256 : .kbps320
     case .appleVideoBest, .appleVideoEfficient:
       value.downloadMode = .automatic
-      value.youtubeVideoCodec = .h264
+      value.youtubeVideoCodec = .vp9
       value.youtubeVideoContainer = .mp4
+      value.allowH265 = true
       value.audioBitrate = self == .appleVideoEfficient ? .kbps256 : .kbps320
     case .custom:
       break

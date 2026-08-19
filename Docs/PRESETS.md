@@ -10,8 +10,8 @@ Presets are output policies, not promises that every provider exposes a lossless
 | --- | --- | --- | --- |
 | Apple Music — Best | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified source `.m4a` | Preserve the best directly compatible source without generation loss |
 | Apple Music — Efficient | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified AAC `.m4a`; preserve a suitable existing source | Storage-conscious without unnecessary re-encoding |
-| Apple Video — Best | Best Apple-compatible H.264 video and AAC audio | Lossless local merge into MP4 | Preserve the selected source tracks without generation loss |
-| Apple Video — Efficient | Same best Apple-compatible source | Hardware HEVC + AAC when available | Smaller Apple-native output without upscaling |
+| Apple Video — Best | Best H.264 through 1080p; VP9 for 1440p/4K; best AAC | Preserved H.264 or high-quality hardware HEVC in MP4 | Preserve resolution and favor picture quality |
+| Apple Video — Efficient | Same resolution policy and compatible AAC | Storage-balanced hardware HEVC + AAC | Smaller Apple-native output without upscaling or minimum-size compromises |
 
 The main screen exposes these as four primary buttons. Once a valid URL is present, choosing a preset creates the job immediately; advanced controls create a Custom policy instead of silently modifying a named preset.
 
@@ -45,22 +45,23 @@ If the provider exposes only one suitable AAC source, Best and Efficient may pre
 
 Goal: preserve the highest Apple-compatible picture quality in a format supported by current Apple playback and library apps.
 
-1. Request the best H.264 MP4 video and AAC/M4A audio exposed to the selected session.
-2. Merge the tracks locally with AVFoundation without re-encoding.
+1. Through 1080p, request H.264 MP4 video and AAC/M4A audio and merge locally without re-encoding.
+2. At 1440p and above, prefer VP9 video, decode locally, and encode high-quality HEVC using Apple VideoToolbox hardware; copy compatible AAC without another lossy encode.
 3. Preserve source resolution, frame rate, aspect ratio, and compatible color metadata. Never upscale.
-4. Use `.mp4` output.
+4. Tag HEVC as `hvc1` and use `.mp4` output for Apple playback.
 
-The current Apple-compatible YouTube path commonly tops out at 1080p. A future 4K path requires a separately licensed reproducible transcoder and must not be advertised until SDR/HDR fixtures pass.
+The 4K SDR path is live and verified. HDR preservation is not yet promised; HDR/color fixtures remain a release gate.
 
 ### Apple Video — Efficient
 
 Goal: materially smaller files while retaining strong visual quality and Apple compatibility.
 
-1. Request the same best Apple-compatible H.264/AAC source as Video Best.
-2. Encode video as HEVC using AVFoundation/hardware acceleration when available, retaining source resolution and never upscaling.
-3. Do not claim HDR preservation until the 4K/HDR acquisition path and golden fixtures ship.
-4. Keep Apple-compatible AAC audio in the output.
-5. Retain the original until the converted file is verified.
+1. Request the same resolution and codec source policy as Video Best.
+2. Encode VP9 video as HEVC using Apple VideoToolbox hardware with a storage-balanced quality setting, retaining source resolution and never upscaling.
+3. This is not a minimum-size mode and does not use low-quality compatibility settings.
+4. Do not claim HDR preservation until HDR/color fixtures ship.
+5. Keep Apple-compatible AAC audio in the output.
+6. Retain the original until the converted file is verified.
 
 ## Apple Music import
 
@@ -70,7 +71,7 @@ Apple Music import is a separate user action after the output file has been veri
 
 The native client exposes all four policies, acquires tracks locally, inspects the source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and retains its source staging data for retry; it is never labeled as a successful AAC, ALAC, or HEVC output.
 
-Before a notarized public release, the policies still require licensed 720p/1080p SDR golden fixtures, multichannel audio fixtures, clean-machine browser/Music permission testing, and tuning of the Efficient video bounds. 4K/HDR fixtures are required before that later path can ship.
+Before a notarized public release, the policies still require licensed 720p/1080p/4K SDR golden fixtures, multichannel audio fixtures, clean-machine browser/Music permission testing, and tuning of the Efficient video bounds. HDR fixtures are required before HDR preservation can be claimed.
 
 ## Acceptance tests
 

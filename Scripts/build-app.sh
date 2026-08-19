@@ -34,17 +34,22 @@ ditto "$project_root/App/Info.plist" "$contents/Info.plist"
 mkdir -p "$contents/Resources/Tools"
 ditto "$project_root/.build/eucrante-tools/yt-dlp" "$contents/Resources/Tools/yt-dlp"
 ditto "$project_root/.build/eucrante-tools/deno" "$contents/Resources/Tools/deno"
+ditto "$project_root/.build/eucrante-tools/ffmpeg" "$contents/Resources/Tools/ffmpeg"
 ditto "$project_root/ThirdParty" "$contents/Resources/Licenses"
+mkdir -p "$contents/Resources/Licenses/ffmpeg"
+ditto "$project_root/.build/eucrante-tools/ffmpeg-licenses" "$contents/Resources/Licenses/ffmpeg"
 ditto "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NOTICES.md"
 
 signing_identity="${CODESIGN_IDENTITY:--}"
 if [[ "$signing_identity" == "-" ]]; then
     codesign --force --sign - "$contents/Resources/Tools/yt-dlp"
     codesign --force --sign - "$contents/Resources/Tools/deno"
+    codesign --force --sign - "$contents/Resources/Tools/ffmpeg"
     codesign --force --sign - --entitlements "$entitlements" "$app_bundle"
 else
     codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/yt-dlp"
     codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/deno"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/ffmpeg"
     codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$signing_identity" "$app_bundle"
 fi
 

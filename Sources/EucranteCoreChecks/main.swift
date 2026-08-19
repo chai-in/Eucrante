@@ -47,9 +47,8 @@ struct EucranteCoreChecks {
     try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: root) }
 
-    let browser =
-      ProcessInfo.processInfo.environment["EUCRANTE_E2E_BROWSER"]
-      .flatMap(BrowserSessionSource.init(rawValue:)) ?? .none
+    let cookieFile = ProcessInfo.processInfo.environment["EUCRANTE_E2E_COOKIE_FILE"]
+      .map(URL.init(fileURLWithPath:))
     let preset = EucrantePreset.appleMusicEfficient
     let preferences = preset.requestPreferences(from: DownloadPreferences())
     let acquirer = LocalMediaAcquirer()
@@ -57,7 +56,7 @@ struct EucranteCoreChecks {
       sourceURL: sourceURL,
       preset: preset,
       preferences: preferences,
-      browserSession: browser,
+      cookieFile: cookieFile,
       workingDirectory: staging,
       progress: { _ in }
     )
@@ -118,41 +117,70 @@ struct EucranteCoreChecks {
     try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: root) }
 
-    let browser =
-      ProcessInfo.processInfo.environment["EUCRANTE_E2E_BROWSER"]
-      .flatMap(BrowserSessionSource.init(rawValue:)) ?? .none
+    let cookieFile = ProcessInfo.processInfo.environment["EUCRANTE_E2E_COOKIE_FILE"]
+      .map(URL.init(fileURLWithPath:))
     let acquirer = LocalMediaAcquirer()
     let status = await acquirer.toolStatus()
     try require(status.ready, "local tools were not ready")
+    var preferences = DownloadPreferences()
+    if ProcessInfo.processInfo.environment["EUCRANTE_E2E_4K"] == "1" {
+      preferences.videoQuality = .maximum
+    }
 
     let acquired = try await acquirer.acquire(
       sourceURL: sourceURL,
       preset: .appleVideoBest,
-      preferences: DownloadPreferences(),
-      browserSession: browser,
+      preferences: preferences,
+      cookieFile: cookieFile,
       workingDirectory: staging,
       progress: { _ in }
     )
-    guard case .merge(let video, let audio, let filename) = acquired else {
-      throw CheckFailure.failed("video acquisition did not return separate Apple tracks")
-    }
-
     let processor = LocalMediaProcessor()
-    let merged = try await processor.merge(
-      video: video,
-      audio: audio,
-      filename: filename,
-      workingDirectory: staging
-    )
-    let processed = try await processor.process(
-      merged,
-      preset: .appleVideoBest,
-      suggestedFilename: filename,
-      destination: destination
-    )
+    let processed: ProcessedMedia
+    switch acquired {
+    case .merge(let video, let audio, let filename):
+      let merged = try await processor.merge(
+        video: video,
+        audio: audio,
+        filename: filename,
+        workingDirectory: staging
+      )
+      processed = try await processor.process(
+        merged,
+        preset: .appleVideoBest,
+        suggestedFilename: filename,
+        destination: destination
+      )
+    case .transcode(let video, let audio, let filename, let duration, let quality):
+      let converted = try await AppleVideoTranscoder().transcode(
+        video: video,
+        audio: audio,
+        duration: duration,
+        quality: quality,
+        workingDirectory: staging
+      )
+      processed = try await processor.process(
+        converted,
+        preset: .custom,
+        suggestedFilename: filename,
+        destination: destination
+      )
+    case .single:
+      throw CheckFailure.failed("video acquisition returned an unexpected result")
+    }
     try require(processed.output.fileSize > 0, "finished local media was empty")
     try require(processed.output.videoCodec != nil, "finished local media had no video")
     try require(processed.output.audioCodec != nil, "finished local media had no audio")
+    if ProcessInfo.processInfo.environment["EUCRANTE_E2E_4K"] == "1" {
+      try require(
+        max(processed.output.width ?? 0, processed.output.height ?? 0) >= 3_840,
+        "4K flow did not preserve 4K resolution"
+      )
+      try require(
+        ["hvc1", "hev1"].contains(processed.output.videoCodec?.lowercased() ?? ""),
+        "4K flow did not produce Apple-compatible HEVC"
+      )
+    }
     print(
       "Local E2E: \(processed.output.width ?? 0)x\(processed.output.height ?? 0), "
         + "\(processed.output.fileSize) bytes, \(processed.decision.displayName), "

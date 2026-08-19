@@ -31,7 +31,7 @@ struct SettingsView: View {
           }
         }
         Text(
-          "Custom video uses H.264 MP4 for reliable Apple playback. One-click presets choose their own policy."
+          "Up to 1080p, Eucrante preserves H.264 without re-encoding. At 1440p and above, it downloads VP9 and uses Apple's hardware encoder to create HEVC/H.265 MP4."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -131,15 +131,23 @@ struct SettingsView: View {
       }
 
       Section("YouTube Premium") {
-        Picker("Use session from", selection: $model.browserSessionSource) {
-          ForEach(BrowserSessionSource.allCases) { source in
-            Text(source.displayName).tag(source)
+        Label(
+          model.youtubeSessionReady ? "Signed in inside Eucrante" : "Not signed in",
+          systemImage: model.youtubeSessionReady
+            ? "person.crop.circle.badge.checkmark" : "person.crop.circle"
+        )
+        HStack {
+          Button(model.youtubeSessionReady ? "Manage YouTube Session…" : "Sign In to YouTube…") {
+            model.openYouTubeSignIn()
+          }
+          if model.youtubeSessionReady {
+            Button("Sign Out of Eucrante") {
+              Task { await model.signOutOfYouTube() }
+            }
           }
         }
         Text(
-          model.browserSessionSource == .none
-            ? "Public formats are available without signing in. Choose a browser only when you want Eucrante to use your local signed-in YouTube session."
-            : "Eucrante reads the selected browser session only on this Mac. It is passed directly to the local downloader and is never copied, uploaded, or saved by Eucrante."
+          "YouTube saves require this private in-app session for reliable access. Eucrante does not read Brave, Safari, Chrome, or Firefox data. A temporary cookie file is created only while a save starts, then deleted immediately."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -154,6 +162,9 @@ struct SettingsView: View {
       }
     }
     .formStyle(.grouped)
+    .sheet(isPresented: $model.showingYouTubeSignIn) {
+      YouTubeSignInView(model: model)
+    }
   }
 
   private var privacy: some View {
@@ -162,7 +173,9 @@ struct SettingsView: View {
         Label("No analytics or advertising SDKs", systemImage: "checkmark.shield")
         Label("Job history is stored only on this Mac", systemImage: "internaldrive")
         Label(
-          "Browser sessions are used only for provider requests", systemImage: "person.badge.key")
+          "YouTube sign-in stays in Eucrante's private session",
+          systemImage: "person.badge.key"
+        )
         Label(
           "Diagnostics exclude source links and credentials", systemImage: "doc.badge.gearshape")
         Button("Clear Local History", role: .destructive) { model.clearHistory() }
@@ -170,7 +183,7 @@ struct SettingsView: View {
       }
       Section {
         Text(
-          "Eucrante can read a browser session only after you select that browser. It does not bypass DRM or access controls."
+          "Eucrante does not read other browsers. It does not bypass DRM or access controls."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
