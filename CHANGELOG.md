@@ -15,6 +15,7 @@ All notable changes to Eucrante will be documented here.
 - Persistent bottom download progress with the active preset, concrete phase, percentage when available, queue access, and cancellation.
 - Branded, reproducibly generated macOS app icon with a complete `.icns` size pyramid.
 - App-layer navigation tests, downloader parser/error/output tests, concurrent destination tests, secure-file tests, and an enforced coverage floor.
+- Unresponsive-process cancellation, bounded streaming-output, concurrent store, and immediate app-model persistence tests.
 
 ### Changed
 
@@ -25,6 +26,11 @@ All notable changes to Eucrante will be documented here.
 - Removed inherited Cobalt settings that the fully local engine did not honor.
 - Destructive history clearing now requires confirmation and states that downloaded files are preserved.
 - Apple VideoToolbox HEVC conversion may use Apple's software fallback when hardware encoding is unavailable.
+- Job-state transitions now use synchronous atomic persistence instead of a debounce window.
+- Unreadable or future-schema job history is preserved in a private recovery copy before a valid store replaces it.
+- Cancellation now escalates when a helper ignores graceful termination, and retained diagnostics use the latest bounded output.
+- Helper HOME, XDG config/cache, Deno cache, and temporary paths now resolve inside each private job directory instead of the user's home folder.
+- Bundled-tool readiness checks now run in parallel and time out with cancellation instead of leaving Settings indefinitely busy when a helper stalls.
 
 ### Security
 
@@ -36,4 +42,6 @@ All notable changes to Eucrante will be documented here.
 
 ### Build
 
-- CI validates plist and shell syntax, enforces strict Swift formatting and a `37%` EucranteCore line-coverage floor, and audits the assembled signed app bundle, tools, licenses, identifier, icon, and restricted FFmpeg configuration.
+- CI validates plist and shell syntax, enforces strict Swift formatting plus `47%` core and `8%` app line-coverage floors, and audits the assembled signed app bundle, tool architectures, licenses, identifier, icon, and restricted FFmpeg configuration.
+- The release script now requires a clean exact version tag and Developer ID signature before notarization, then emits an architecture-labelled archive, portable checksum, and JSON provenance record containing Apple's notarization request ID.
+- All nested tools and the app now use Hardened Runtime. Deno receives only its required V8 JIT entitlement; yt-dlp receives only the library-validation exception required by its extracted Python framework. The verifier rejects unexpected extra entitlements and exercises both helpers under their final signatures.

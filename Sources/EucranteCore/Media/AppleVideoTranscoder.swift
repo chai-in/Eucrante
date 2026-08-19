@@ -35,7 +35,9 @@ public actor AppleVideoTranscoder {
     guard fileManager.isExecutableFile(atPath: executable.path) else {
       throw AppleVideoTranscodeError.toolMissing
     }
-    try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+    try SecureCredentialFile.prepareDirectory(workingDirectory, fileManager: fileManager)
+    try LocalProcessRunner.prepareRestrictedEnvironment(
+      homeDirectory: workingDirectory, fileManager: fileManager)
     let output = workingDirectory.appendingPathComponent("apple-hevc.mp4")
     if fileManager.fileExists(atPath: output.path) {
       try fileManager.removeItem(at: output)
@@ -53,13 +55,9 @@ public actor AppleVideoTranscoder {
     process.arguments = arguments
     process.standardOutput = processPipe
     process.standardError = processPipe
-    process.environment = [
-      "HOME": fileManager.homeDirectoryForCurrentUser.path,
-      "LANG": "en_US.UTF-8",
-      "LC_ALL": "en_US.UTF-8",
-      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-    ]
-    let running = TranscodingProcess(process)
+    process.environment = LocalProcessRunner.restrictedEnvironment(
+      homeDirectory: workingDirectory)
+    let running = CancellableProcess(process)
 
     do {
       try await withTaskCancellationHandler {
@@ -69,11 +67,11 @@ public actor AppleVideoTranscoder {
           throw AppleVideoTranscodeError.toolMissing
         }
         progress(0)
-        var diagnosticLines: [String] = []
+        var diagnosticLines = BoundedLineBuffer(capacity: 100)
         for try await line in processPipe.fileHandleForReading.bytes.lines {
           if let outTime = Self.parseProgressTime(line), let duration, duration > 0 {
             progress(min(0.99, max(0, outTime / duration)))
-          } else if diagnosticLines.count < 100 {
+          } else {
             diagnosticLines.append(line)
           }
         }
@@ -81,7 +79,7 @@ public actor AppleVideoTranscoder {
         try Task.checkCancellation()
         guard process.terminationReason == .exit, process.terminationStatus == 0 else {
           throw AppleVideoTranscodeError.failed(
-            diagnosticLines.suffix(20).joined(separator: "\n")
+            diagnosticLines.lines.suffix(20).joined(separator: "\n")
               .trimmingCharacters(in: .whitespacesAndNewlines)
           )
         }
@@ -149,16 +147,6 @@ public actor AppleVideoTranscoder {
   }
 }
 
-private final class TranscodingProcess: @unchecked Sendable {
-  let process: Process
-
-  init(_ process: Process) { self.process = process }
-
-  func cancel() {
-    if process.isRunning { process.terminate() }
-  }
-}
-
 public enum AppleVideoTranscodeError: LocalizedError, Equatable, Sendable {
   case toolMissing
   case failed(String)
@@ -170,10 +158,10 @@ public enum AppleVideoTranscodeError: LocalizedError, Equatable, Sendable {
       "Eucrante's Apple video converter is missing or damaged. Reinstall the app."
     case .failed(let detail):
       detail.isEmpty
-        ? "The Apple hardware video conversion could not finish."
-        : "The Apple hardware video conversion could not finish: \(detail)"
+        ? "The Apple video conversion could not finish."
+        : "The Apple video conversion could not finish: \(detail)"
     case .outputMissing:
-      "The Apple hardware video conversion produced no usable file."
+      "The Apple video conversion produced no usable file."
     }
   }
 }

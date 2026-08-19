@@ -27,14 +27,14 @@ No cookies, source links, job manifests, or media files are sent to Eucrante-ope
 | Component | Responsibility |
 | --- | --- |
 | SwiftUI app | URL entry, presets, settings, consent, queue/history, user feedback |
-| `LocalMediaAcquirer` | Builds argument arrays, starts helpers without a shell, parses bounded progress, cancellation, and output discovery |
+| `LocalMediaAcquirer` | Builds argument arrays, starts helpers without a shell, parses bounded progress, performs bounded parallel readiness checks, handles escalation-tested cancellation, and discovers output |
 | `yt-dlp` | Provider extraction and media transfer |
 | Deno | Local JavaScript runtime required by current YouTube extraction |
 | In-app WebKit session | Optional YouTube sign-in stored in Eucrante's private app data, independent of external browsers |
 | Minimal FFmpeg helper | Native VP9 decode and Apple VideoToolbox HEVC encode for 1440p/4K; no network, GPL, non-free, x264, or x265 components |
 | `AppleVideoTranscoder` | Builds argument arrays, reports progress, cancels the helper, copies AAC, and uses Apple VideoToolbox with software fallback when required |
 | `LocalMediaProcessor` | AVFoundation inspection, lossless video/audio merge, Apple conversion, and post-output verification |
-| `JobStore` | Atomic local JSON persistence in Application Support |
+| `JobStore` | Lock-serialized, synchronous atomic JSON persistence in Application Support, with protected recovery copies before unreadable data is replaced |
 
 ## Trust boundaries
 
@@ -44,6 +44,7 @@ No cookies, source links, job manifests, or media files are sent to Eucrante-ope
 - Authenticated access is disabled by default. The user signs in within Eucrante; no external browser data is read.
 - Applicable cookies are exported only for YouTube jobs. The opaque job folder is mode `0700`; the file is created mode `0600` before any credential bytes are written and is deleted on both success and failure before staging data can be retained. Startup and Sign Out purge remaining exports.
 - Each job writes only into an opaque UUID staging directory. Remote titles are sanitized before becoming output filenames.
+- Helper environment variables are allowlisted; HOME, XDG config/cache, Deno cache, and temporary paths are redirected into that private job directory.
 - A job completes only after AVFoundation opens the output and confirms non-empty usable media.
 
 ## Acquisition policy
@@ -54,6 +55,8 @@ The current path is verified for 4K SDR. HDR preservation is not yet claimed and
 
 ## Release integrity
 
-Helper versions and SHA-256 hashes are pinned in `Scripts/install-local-tools.sh` and `Scripts/build-ffmpeg.sh`. The build fails on a hash mismatch. FFmpeg is built from verified official source as LGPL 2.1-or-later with GPL/non-free/network functionality disabled. Nested executables are signed before the outer app is signed and notarized. Updating a helper requires a reviewed version/hash change, license review, tests, and a changelog entry.
+Helper versions and SHA-256 hashes are pinned in `Scripts/install-local-tools.sh` and `Scripts/build-ffmpeg.sh`. The build fails on a hash mismatch. FFmpeg is built from verified official source as LGPL 2.1-or-later with GPL/non-free/network functionality disabled. Nested executables use Hardened Runtime and are signed before the outer app is signed and notarized. Deno receives only the JIT entitlement required by V8. The self-contained yt-dlp executable receives the library-validation exception required to load its PyInstaller-extracted, separately signed Python framework. The bundle audit launches both under their final signatures; FFmpeg and the app receive neither exception. Updating a helper requires a reviewed version/hash change, license review, tests, and a changelog entry.
 
-`Scripts/verify-app.sh` audits the assembled bundle rather than trusting build success: expected tools and licenses must exist, identifiers and minimum system version must match, all executables must verify under code signing, the app icon must be present, and FFmpeg must retain its pinned restricted configuration. CI also enforces strict formatting, app/core tests, script/plist validation, and a ratcheted EucranteCore line-coverage floor.
+`Scripts/verify-app.sh` audits the assembled bundle rather than trusting build success: expected tools and licenses must exist, identifiers and minimum system version must match, all executables must verify under code signing, every helper must support the app architecture, the app icon must be present, and FFmpeg must retain its pinned restricted configuration. CI also enforces strict formatting, app/core tests, script/plist validation, and ratcheted line-coverage floors for both targets.
+
+The notarization script permits only a clean exactly tagged commit signed with a Developer ID Application identity. It submits to Apple, staples and validates the ticket, passes Gatekeeper, and creates an architecture-labelled archive, portable checksum, and JSON provenance record. Automatic updates remain disabled until a separately reviewed signed-feed trust model exists.

@@ -8,6 +8,8 @@ app_name="Eucrante"
 app_bundle="$project_root/dist/$app_name.app"
 contents="$app_bundle/Contents"
 entitlements="$project_root/App/Eucrante.entitlements"
+deno_entitlements="$project_root/App/Deno.entitlements"
+yt_dlp_entitlements="$project_root/App/YtDLP.entitlements"
 
 if ! xcodebuild -version >/dev/null 2>&1; then
     echo "Full Xcode is required. Install Xcode, then select it with xcode-select."
@@ -43,13 +45,13 @@ ditto "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NO
 
 signing_identity="${CODESIGN_IDENTITY:--}"
 if [[ "$signing_identity" == "-" ]]; then
-    codesign --force --sign - "$contents/Resources/Tools/yt-dlp"
-    codesign --force --sign - "$contents/Resources/Tools/deno"
-    codesign --force --sign - "$contents/Resources/Tools/ffmpeg"
-    codesign --force --sign - --entitlements "$entitlements" "$app_bundle"
+    codesign --force --options runtime --sign - --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/yt-dlp"
+    codesign --force --options runtime --sign - --entitlements "$deno_entitlements" "$contents/Resources/Tools/deno"
+    codesign --force --options runtime --sign - "$contents/Resources/Tools/ffmpeg"
+    codesign --force --options runtime --sign - --entitlements "$entitlements" "$app_bundle"
 else
-    codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/yt-dlp"
-    codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/deno"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/yt-dlp"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" --entitlements "$deno_entitlements" "$contents/Resources/Tools/deno"
     codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/ffmpeg"
     codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$signing_identity" "$app_bundle"
 fi

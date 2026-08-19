@@ -98,11 +98,17 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
 
   private let tools: ToolPaths
   private let fileManager: FileManager
+  private let toolCheckTimeout: Duration
   private let runner = LocalProcessRunner()
 
-  public init(tools: ToolPaths = .discover(), fileManager: FileManager = .default) {
+  public init(
+    tools: ToolPaths = .discover(),
+    fileManager: FileManager = .default,
+    toolCheckTimeout: Duration = .seconds(8)
+  ) {
     self.tools = tools
     self.fileManager = fileManager
+    self.toolCheckTimeout = toolCheckTimeout
   }
 
   public func toolStatus() async -> LocalToolStatus {
@@ -114,27 +120,69 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
         transcoderVersion: nil
       )
     }
-    let ytDLPVersion = try? await runner.run(
+    let checkHome = fileManager.temporaryDirectory.appendingPathComponent(
+      "eucrante-tool-check-\(UUID().uuidString)", isDirectory: true)
+    do {
+      try LocalProcessRunner.prepareRestrictedEnvironment(
+        homeDirectory: checkHome, fileManager: fileManager)
+    } catch {
+      return LocalToolStatus(
+        ready: false,
+        downloaderVersion: nil,
+        runtimeVersion: nil,
+        transcoderVersion: nil
+      )
+    }
+    defer { try? fileManager.removeItem(at: checkHome) }
+    let environment = LocalProcessRunner.restrictedEnvironment(homeDirectory: checkHome)
+    async let ytDLPVersion = checkedVersion(
       executable: tools.ytDLP,
       arguments: ["--version"],
-      onLine: { _ in }
-    ).first
-    let denoVersion = try? await runner.run(
+      environment: environment
+    )
+    async let denoVersion = checkedVersion(
       executable: tools.deno,
       arguments: ["--version"],
-      onLine: { _ in }
-    ).first
-    let ffmpegVersion = try? await runner.run(
+      environment: environment
+    )
+    async let ffmpegVersion = checkedVersion(
       executable: tools.ffmpeg,
       arguments: ["-version"],
-      onLine: { _ in }
-    ).first
-    return LocalToolStatus(
-      ready: ytDLPVersion != nil && denoVersion != nil && ffmpegVersion != nil,
-      downloaderVersion: ytDLPVersion,
-      runtimeVersion: denoVersion,
-      transcoderVersion: ffmpegVersion
+      environment: environment
     )
+    let versions = await (ytDLPVersion, denoVersion, ffmpegVersion)
+    return LocalToolStatus(
+      ready: versions.0 != nil && versions.1 != nil && versions.2 != nil,
+      downloaderVersion: versions.0,
+      runtimeVersion: versions.1,
+      transcoderVersion: versions.2
+    )
+  }
+
+  private func checkedVersion(
+    executable: URL,
+    arguments: [String],
+    environment: [String: String]
+  ) async -> String? {
+    let runner = runner
+    let timeout = toolCheckTimeout
+    return await withTaskGroup(of: String?.self) { group in
+      group.addTask {
+        try? await runner.run(
+          executable: executable,
+          arguments: arguments,
+          environment: environment,
+          onLine: { _ in }
+        ).first
+      }
+      group.addTask {
+        try? await Task.sleep(for: timeout)
+        return nil
+      }
+      let first = await group.next() ?? nil
+      group.cancelAll()
+      return first
+    }
   }
 
   public func acquire(
@@ -317,7 +365,14 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     arguments.append(sourceURL.absoluteString)
 
     let metadata = LockedMetadata()
-    _ = try await runner.run(executable: tools.ytDLP, arguments: arguments) { line in
+    try LocalProcessRunner.prepareRestrictedEnvironment(
+      homeDirectory: workingDirectory, fileManager: fileManager)
+    let environment = LocalProcessRunner.restrictedEnvironment(homeDirectory: workingDirectory)
+    _ = try await runner.run(
+      executable: tools.ytDLP,
+      arguments: arguments,
+      environment: environment
+    ) { line in
       if line.hasPrefix("EUCRANTE_TITLE:") {
         metadata.setTitle(String(line.dropFirst("EUCRANTE_TITLE:".count)))
       } else if line.hasPrefix("EUCRANTE_CREATOR:") {
@@ -479,63 +534,6 @@ extension VideoQuality {
     switch self {
     case .maximum, .p4320, .p2160, .p1440: true
     case .p1080, .p720, .p480, .p360, .p240, .p144: false
-    }
-  }
-}
-
-private final class RunningProcess: @unchecked Sendable {
-  let process: Process
-
-  init(_ process: Process) { self.process = process }
-
-  func cancel() {
-    if process.isRunning { process.terminate() }
-  }
-}
-
-private actor LocalProcessRunner {
-  func run(
-    executable: URL,
-    arguments: [String],
-    onLine: @escaping @Sendable (String) -> Void
-  ) async throws -> [String] {
-    let process = Process()
-    let pipe = Pipe()
-    process.executableURL = executable
-    process.arguments = arguments
-    process.standardOutput = pipe
-    process.standardError = pipe
-    process.environment = [
-      "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-      "LANG": "en_US.UTF-8",
-      "LC_ALL": "en_US.UTF-8",
-      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-    ]
-    let running = RunningProcess(process)
-
-    return try await withTaskCancellationHandler {
-      do {
-        try process.run()
-      } catch {
-        throw LocalAcquisitionError.toolsMissing
-      }
-
-      var lines: [String] = []
-      for try await line in pipe.fileHandleForReading.bytes.lines {
-        if lines.count < 200 { lines.append(line) }
-        onLine(line)
-      }
-      process.waitUntilExit()
-      try Task.checkCancellation()
-      guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-        throw LocalMediaAcquirer.processError(
-          status: process.terminationStatus,
-          diagnostic: lines.joined(separator: "\n")
-        )
-      }
-      return lines
-    } onCancel: {
-      running.cancel()
     }
   }
 }

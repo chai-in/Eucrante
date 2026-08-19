@@ -16,6 +16,14 @@ struct EucranteCoreChecks {
   static func main() async throws {
     try checkURLValidation()
     try checkFilenameSafety()
+    if ProcessInfo.processInfo.environment["EUCRANTE_CHECK_TOOLS"] == "1" {
+      let status = await LocalMediaAcquirer().toolStatus()
+      print(
+        "Local tools: \(status.downloaderVersion ?? "unknown"), "
+          + "\(status.runtimeVersion ?? "unknown"), \(status.transcoderVersion ?? "unknown")"
+      )
+      try require(status.ready, "local tools failed their executable launch checks")
+    }
     if let value = ProcessInfo.processInfo.environment["EUCRANTE_E2E_URL"],
       let sourceURL = URL(string: value)
     {

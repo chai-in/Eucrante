@@ -3,7 +3,8 @@
 set -euo pipefail
 
 project_root="${0:A:h:h}"
-minimum_percent="${1:-37}"
+core_minimum_percent="${1:-47}"
+app_minimum_percent="${2:-8}"
 
 command -v jq >/dev/null 2>&1 || {
   echo "Coverage verification requires jq." >&2
@@ -14,21 +15,28 @@ cd "$project_root"
 swift test --enable-code-coverage -Xswiftc -warnings-as-errors
 coverage_path="$(swift test --show-codecov-path)"
 
-read -r covered total percent <<<"$(
-  jq -r '
-    [.data[0].files[]
-      | select(.filename | contains("/Sources/EucranteCore/"))
-      | .summary.lines]
-    | [(map(.covered) | add), (map(.count) | add)]
-    | . + [((.[0] * 10000 / .[1] | floor) / 100)]
-    | @tsv
-  ' "$coverage_path"
-)"
+verify_target() {
+  local target="$1"
+  local minimum="$2"
+  local covered total percent
+  read -r covered total percent <<<"$(
+    jq -r --arg path "/Sources/$target/" '
+      [.data[0].files[]
+        | select(.filename | contains($path))
+        | .summary.lines]
+      | [(map(.covered) | add // 0), (map(.count) | add // 0)]
+      | . + [if .[1] > 0 then ((.[0] * 10000 / .[1] | floor) / 100) else 0 end]
+      | @tsv
+    ' "$coverage_path"
+  )"
 
-awk -v actual="$percent" -v minimum="$minimum_percent" 'BEGIN { exit(actual + 0 < minimum + 0) }' \
-  || {
-    echo "EucranteCore line coverage $percent% is below the $minimum_percent% floor." >&2
+  awk -v actual="$percent" -v required="$minimum" \
+    'BEGIN { exit(actual + 0 < required + 0) }' || {
+    echo "$target line coverage $percent% is below the $minimum% floor." >&2
     exit 1
   }
+  echo "$target line coverage: $percent% ($covered/$total), floor: $minimum%"
+}
 
-echo "EucranteCore line coverage: $percent% ($covered/$total), floor: $minimum_percent%"
+verify_target "EucranteCore" "$core_minimum_percent"
+verify_target "EucranteApp" "$app_minimum_percent"

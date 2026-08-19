@@ -33,14 +33,14 @@ jobs:
 
       - name: Validate project files and scripts
         run: |
-          plutil -lint App/Info.plist App/Eucrante.entitlements
+          plutil -lint App/Info.plist App/Eucrante.entitlements App/Deno.entitlements App/YtDLP.entitlements
           zsh -n Scripts/*.sh
 
       - name: Build with warnings as errors
         run: swift build -Xswiftc -warnings-as-errors
 
       - name: Run tests with coverage floor
-        run: ./Scripts/check-coverage.sh 37
+        run: ./Scripts/check-coverage.sh 47 8
 
       - name: Run core integration checks
         run: swift run EucranteCoreChecks

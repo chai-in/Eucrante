@@ -22,11 +22,11 @@ Eucrante does not bypass DRM or access controls. Use it only for media you own o
 
 ## Build
 
-Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain.
+Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain. `make app` creates a native bundle for the build Mac and verifies that every bundled helper supports that architecture; release archives declare their architecture explicitly.
 
 ```sh
 swift test -Xswiftc -warnings-as-errors
-./Scripts/check-coverage.sh 37
+./Scripts/check-coverage.sh 47 8
 swift run EucranteCoreChecks
 make app
 ```
@@ -48,6 +48,7 @@ Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass
 - [Product contract](Docs/PRODUCT.md)
 - [Preset policies](Docs/PRESETS.md)
 - [YouTube Premium boundary](Docs/YOUTUBE-PREMIUM.md)
+- [Release process](Docs/RELEASING.md)
 - [Security policy](SECURITY.md)
 - [Privacy](PRIVACY.md)
 

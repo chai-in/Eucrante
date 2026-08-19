@@ -64,7 +64,6 @@ final class AppModel: ObservableObject {
   private let jobStore: JobStore
   private let defaults: UserDefaults
   private var activeTasks: [UUID: Task<Void, Never>] = [:]
-  private var persistenceTask: Task<Void, Never>?
 
   private static let preferencesKey = "save.preferences.v1"
   private static let outputBookmarkKey = "downloads.output-bookmark.v1"
@@ -95,7 +94,7 @@ final class AppModel: ObservableObject {
 
     Task {
       purgeTransientCookieExports()
-      await loadHistory()
+      loadHistory()
       await refreshLocalToolStatus()
       await refreshYouTubeSession()
     }
@@ -136,7 +135,7 @@ final class AppModel: ObservableObject {
     let job = PersistentJob(sourceURL: sourceURL, preset: selected)
     jobs.insert(job, at: 0)
     sourceText = ""
-    schedulePersist()
+    persistJobs()
     drainQueue()
   }
 
@@ -166,7 +165,7 @@ final class AppModel: ObservableObject {
     }
     removeStagingData(for: jobs[index])
     jobs.remove(at: index)
-    schedulePersist()
+    persistJobs()
   }
 
   func removeLocalFile(_ jobID: UUID) {
@@ -310,7 +309,7 @@ final class AppModel: ObservableObject {
       removeStagingData(for: job)
     }
     jobs.removeAll { !$0.state.isActive }
-    schedulePersist()
+    persistJobs()
   }
 
   func exportDiagnostics() {
@@ -602,9 +601,9 @@ final class AppModel: ObservableObject {
     }
   }
 
-  private func loadHistory() async {
+  private func loadHistory() {
     do {
-      var loaded = try await jobStore.load()
+      var loaded = try jobStore.load()
       for index in loaded.indices
       where loaded[index].state.isActive && loaded[index].state != .queued {
         loaded[index].state = .failed
@@ -614,20 +613,18 @@ final class AppModel: ObservableObject {
         loaded[index].updatedAt = .now
       }
       jobs = loaded.sorted { $0.createdAt > $1.createdAt }
-      schedulePersist()
+      persistJobs()
       drainQueue()
     } catch {
       errorMessage = userMessage(for: error)
     }
   }
 
-  private func schedulePersist() {
-    persistenceTask?.cancel()
-    let snapshot = jobs
-    persistenceTask = Task { [jobStore] in
-      try? await Task.sleep(for: .milliseconds(200))
-      guard !Task.isCancelled else { return }
-      try? await jobStore.save(snapshot)
+  private func persistJobs() {
+    do {
+      try jobStore.save(jobs)
+    } catch {
+      errorMessage = userMessage(for: error)
     }
   }
 
@@ -638,7 +635,7 @@ final class AppModel: ObservableObject {
   ) {
     guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
     change(&jobs[index])
-    if persist { schedulePersist() }
+    if persist { persistJobs() }
   }
 
   private func fail(_ id: UUID, error: Error) {

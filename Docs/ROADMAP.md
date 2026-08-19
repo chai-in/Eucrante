@@ -9,14 +9,15 @@
 - AVFoundation inspection, output verification, cancellation, queue/history, Finder, Trash, notifications, and Music import.
 - Exact local YouTube end-to-end developer check.
 - Signed-bundle audit, branded reproducible app icon, app/core security-boundary tests, and an enforced coverage floor.
+- Escalation-tested child-process cancellation, bounded streaming diagnostics, and synchronous atomic job-state persistence.
+- Architecture-labelled notarized-release policy with portable checksums and machine-readable provenance.
 
 ## Before the first public binary
 
-- Add process-runner fixture tests for child-process cancellation and malformed streaming output; progress, error classification, output selection, symlink rejection, and authenticated navigation boundaries are covered.
 - Add a clean-machine UI test for first launch, browser consent, folder permission, Music automation, and relaunch recovery.
-- Add update provenance and a signed release-feed policy.
+- Implement a separately reviewed signed update feed or keep automatic updates disabled; release provenance is already generated.
 - Run licensed SDR/HDR and mono/stereo/multichannel media fixtures.
-- Publish notarized arm64 and x86_64 artifacts or clearly document the supported architecture.
+- Produce and clean-machine test the first notarized architecture-labelled artifact; source/build architecture policy is documented.
 
 ## Later
 
