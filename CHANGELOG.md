@@ -14,6 +14,8 @@ All notable changes to Eucrante will be documented here.
 - Four Apple-oriented one-click policies, filename previews, local queue/history, cancellation, retry, notifications, Finder/Trash actions, and explicit Music import.
 - Persistent bottom download progress with the active preset, concrete phase, percentage when available, queue access, and cancellation.
 - Branded, reproducibly generated macOS app icon with a complete `.icns` size pyramid.
+- Native drag-to-Applications DMG generation with a branded Finder layout, development preview mode, future Developer ID signing/notarization, Gatekeeper verification, checksums, and provenance.
+- Responsive GitHub Pages product/documentation site with pinned deployment actions and a branded social preview.
 - App-layer navigation tests, downloader parser/error/output tests, concurrent destination tests, secure-file tests, and an enforced coverage floor.
 - Unresponsive-process cancellation, bounded streaming-output, concurrent store, and immediate app-model persistence tests.
 - Deterministic app-orchestration tests covering verified local completion, interrupted-job recovery, the embedded YouTube-session gate, and sign-out cancellation.
@@ -44,7 +46,7 @@ All notable changes to Eucrante will be documented here.
 
 ### Build
 
-- CI validates plist and shell syntax, enforces strict Swift formatting plus `58%` core and `16%` app line-coverage floors, and audits the assembled signed app bundle, tool architectures, licenses, identifier, icon, and restricted FFmpeg configuration.
+- CI validates plist and shell syntax, enforces strict Swift formatting plus `92%` core and `83%` app line-coverage floors, and audits the assembled signed app bundle, tool architectures, licenses, identifier, icon, and restricted FFmpeg configuration.
 - CI checkout credentials are not persisted, and Dependabot groups weekly updates for pinned GitHub Actions.
-- The release script now requires a clean exact version tag and Developer ID signature before notarization, then emits an architecture-labelled archive, portable checksum, and JSON provenance record containing Apple's notarization request ID.
+- The release script now requires a clean exact version tag and Developer ID signature before notarization, then emits paired architecture-labelled DMG/ZIP artifacts, portable checksums, and JSON provenance containing Apple's notarization request IDs.
 - All nested tools and the app now use Hardened Runtime. Deno receives only its required V8 JIT entitlement; yt-dlp receives only the library-validation exception required by its extracted Python framework. The verifier rejects unexpected extra entitlements and exercises both helpers under their final signatures.

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://chai-in.github.io/Eucrante/sitemap.xml

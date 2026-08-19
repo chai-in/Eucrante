@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07101d" />
+    <meta
+      name="description"
+      content="Eucrante is a private, native macOS app for saving and preparing media locally. No server, account, analytics, or browser dependency."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Eucrante — local media tools for macOS" />
+    <meta
+      property="og:description"
+      content="A native SwiftUI app for high-quality local media workflows, Apple Music import, and Apple-native video output."
+    />
+    <meta property="og:url" content="https://chai-in.github.io/Eucrante/" />
+    <meta property="og:image" content="https://chai-in.github.io/Eucrante/assets/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Eucrante — local media tools for macOS" />
+    <meta
+      name="twitter:description"
+      content="Private, native, and local-first media workflows for macOS."
+    />
+    <meta name="twitter:image" content="https://chai-in.github.io/Eucrante/assets/og.png" />
+    <link rel="icon" href="assets/icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>Eucrante — local media tools for macOS</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Eucrante home">
+        <img src="assets/icon.png" alt="" width="38" height="38" />
+        <span>Eucrante</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/chai-in/Eucrante">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <div class="eyebrow"><span></span> Native SwiftUI · macOS 14+</div>
+          <h1>Save what matters.<br /><em>Keep it local.</em></h1>
+          <p class="hero-lede">
+            Eucrante is a private macOS app for high-quality media workflows, Apple Music
+            import, and Apple-native video output—with no server, project account, analytics,
+            or external browser dependency.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#install">Build Eucrante</a>
+            <a class="button secondary" href="https://github.com/chai-in/Eucrante">
+              View source
+            </a>
+          </div>
+          <p class="release-note">
+            <span>Current distribution</span> Apache-2.0 source releases on GitHub
+          </p>
+        </div>
+
+        <div class="app-preview" aria-label="Preview of Eucrante output presets">
+          <div class="window-bar">
+            <span class="traffic red"></span>
+            <span class="traffic yellow"></span>
+            <span class="traffic green"></span>
+            <strong>Save</strong>
+          </div>
+          <div class="preview-content">
+            <div class="link-field">https://…</div>
+            <div class="media-row">
+              <div class="artwork"></div>
+              <div>
+                <strong>Your media</strong>
+                <span>Preview · metadata · format details</span>
+              </div>
+            </div>
+            <div class="preset-grid">
+              <div><strong>♫ Music — Best</strong><span>Highest available quality</span></div>
+              <div><strong>≋ Music — Efficient</strong><span>Storage-balanced AAC</span></div>
+              <div><strong>▣ Video — Best</strong><span>Up to 4K Apple HEVC</span></div>
+              <div><strong>↥ Video — Efficient</strong><span>Smaller Apple-native video</span></div>
+            </div>
+            <div class="progress-line"><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="Project principles">
+        <div><strong>Local-only</strong><span>No relay or backend</span></div>
+        <div><strong>Private</strong><span>No analytics or ads</span></div>
+        <div><strong>Inspectable</strong><span>Open source and pinned tools</span></div>
+        <div><strong>Apple-native</strong><span>SwiftUI, HEVC, Music import</span></div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="section-heading">
+          <p class="kicker">Purpose-built</p>
+          <h2>A focused Mac app, not a web service.</h2>
+          <p>Every stage—from preview to processing to import—runs on your Mac.</p>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-number">01</span>
+            <h3>One-click output policies</h3>
+            <p>
+              Four clear choices cover high-quality and storage-balanced music and video.
+              Previewed codec, resolution, bitrate, and estimated size remove guesswork.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">02</span>
+            <h3>Rich Apple Music import</h3>
+            <p>
+              Import verified audio with title, artist, album, year, artwork, and optional
+              manual overrides. Artwork is normalized for Music compatibility.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">03</span>
+            <h3>Beyond H.264</h3>
+            <p>
+              Preserve compatible H.264 sources and convert high-resolution VP9 to Apple HEVC
+              using VideoToolbox, copying compatible audio without another lossy pass.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">04</span>
+            <h3>Private provider sessions</h3>
+            <p>
+              Optional YouTube sign-in stays in Eucrante’s private WebKit store. The app never
+              reads Safari, Brave, Chrome, Firefox, or your password database.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">05</span>
+            <h3>Visible progress and recovery</h3>
+            <p>
+              Concrete phases, progress, cancellation, queue history, retry, and verified
+              outputs keep long saves understandable and recoverable.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">06</span>
+            <h3>Hardened local tools</h3>
+            <p>
+              Exact helper versions and hashes are pinned. FFmpeg is a restricted LGPL build;
+              every executable is checked and signed inside the final app bundle.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section install-section" id="install">
+        <div class="section-heading compact">
+          <p class="kicker">Install today</p>
+          <h2>Build the tagged source.</h2>
+          <p>
+            The maintainer currently has a free Apple developer account, so Eucrante does not
+            distribute an unsigned binary that asks people to weaken Gatekeeper.
+          </p>
+        </div>
+        <div class="install-grid">
+          <div class="terminal" aria-label="Build commands">
+            <div class="terminal-title"><span></span><span></span><span></span> Terminal</div>
+            <pre><code><b>git</b> clone https://github.com/chai-in/Eucrante.git
+<b>cd</b> Eucrante
+<b>make</b> check
+<b>make</b> app
+<b>open</b> dist/Eucrante.app</code></pre>
+          </div>
+          <div class="install-details">
+            <div>
+              <strong>Requirements</strong>
+              <span>macOS 14 or newer, full Xcode, Swift 6</span>
+            </div>
+            <div>
+              <strong>DMG-ready release flow</strong>
+              <span>
+                A polished drag-to-Applications DMG pipeline is built and tested locally. Public
+                DMGs remain disabled until Developer ID signing and notarization are available.
+              </span>
+            </div>
+            <div>
+              <strong>Use responsibly</strong>
+              <span>Save only media you own or are authorized to download.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="docs">
+        <div class="section-heading">
+          <p class="kicker">Documentation</p>
+          <h2>Read the contract, not marketing fog.</h2>
+        </div>
+        <div class="docs-grid">
+          <a href="https://github.com/chai-in/Eucrante/blob/main/Docs/PRODUCT.md">
+            <span>Product</span><strong>What Eucrante promises →</strong>
+          </a>
+          <a href="https://github.com/chai-in/Eucrante/blob/main/Docs/ARCHITECTURE.md">
+            <span>Architecture</span><strong>How the local pipeline works →</strong>
+          </a>
+          <a href="https://github.com/chai-in/Eucrante/blob/main/Docs/PRESETS.md">
+            <span>Presets</span><strong>Quality and efficiency policies →</strong>
+          </a>
+          <a href="https://github.com/chai-in/Eucrante/blob/main/Docs/RELEASING.md">
+            <span>Distribution</span><strong>Signing, DMG, and releases →</strong>
+          </a>
+          <a href="https://github.com/chai-in/Eucrante/blob/main/SECURITY.md">
+            <span>Security</span><strong>Trust model and reporting →</strong>
+          </a>
+          <a href="https://github.com/chai-in/Eucrante/blob/main/PRIVACY.md">
+            <span>Privacy</span><strong>What stays on your Mac →</strong>
+          </a>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div>
+          <p class="kicker">Open source</p>
+          <h2>Inspect it. Build it. Improve it.</h2>
+          <p>Eucrante is Apache-2.0 licensed and developed in public.</p>
+        </div>
+        <a class="button primary" href="https://github.com/chai-in/Eucrante">Open GitHub</a>
+      </section>
+    </main>
+
+    <footer>
+      <div class="brand footer-brand">
+        <img src="assets/icon.png" alt="" width="30" height="30" />
+        <span>Eucrante</span>
+      </div>
+      <p>Named for the Nereid of successful voyages.</p>
+      <p>Apache-2.0 · © 2026 contributors</p>
+    </footer>
+  </body>
+</html>

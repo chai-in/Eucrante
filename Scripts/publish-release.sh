@@ -56,14 +56,22 @@ git -C "$project_root" ls-remote --exit-code --tags origin "refs/tags/$expected_
 setopt local_options null_glob
 assets=()
 if [[ "$mode" == "binary" ]]; then
-  archives=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*.zip(N))
-  (( ${#archives} > 0 )) \
-    || fail "no architecture-labelled release archives were found in dist/"
+  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*.dmg(N))
+  (( ${#disk_images} > 0 )) \
+    || fail "no architecture-labelled release DMGs were found in dist/"
+
+  archives=()
+  for disk_image in "${disk_images[@]}"; do
+    portable_archive="${disk_image:r}.zip"
+    [[ -f "$portable_archive" ]] \
+      || fail "portable ZIP is missing for ${disk_image:t}"
+    archives+=("$disk_image" "$portable_archive")
+  done
 
   head_commit="$(git -C "$project_root" rev-parse HEAD)"
   for archive in "${archives[@]}"; do
     checksum="$archive.sha256"
-    provenance="${archive:r}.provenance.json"
+    provenance="$archive.provenance.json"
     [[ -f "$checksum" ]] || fail "checksum is missing: ${checksum:t}"
     [[ -f "$provenance" ]] || fail "provenance is missing: ${provenance:t}"
 

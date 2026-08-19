@@ -35,21 +35,31 @@ APPLE_NOTARY_PROFILE='Eucrante-Notary' ./Scripts/notarize-app.sh
 
 The notarization script refuses a dirty worktree, a mismatched tag, an ad-hoc signature, a failed bundle audit, a rejected notarization, an unstapled ticket, or a failed Gatekeeper assessment. On success, `dist/` contains:
 
+- the notarized, stapled drag-to-Applications DMG;
 - the architecture-labelled ZIP archive;
-- a portable `<sha256>  <filename>` checksum file;
-- a JSON provenance record containing the version, build, tag, commit, architecture, minimum macOS version, archive hash and size, notarization state and request ID, and every bundled-helper hash.
+- one portable `<sha256>  <filename>` checksum file per artifact;
+- one JSON provenance record per artifact containing the version, build, tag, commit, architecture, minimum macOS version, artifact hash and size, notarization state and request ID, and every bundled-helper hash.
 
 Verify the checksum from inside `dist/`:
 
 ```sh
 shasum -a 256 -c Eucrante-0.1.0-1-macOS-arm64.zip.sha256
+shasum -a 256 -c Eucrante-0.1.0-1-macOS-arm64.dmg.sha256
 ```
 
 ## Distribution policy
 
 GitHub Releases is Eucrante's canonical distribution channel. With the maintainer's current free Apple developer account, releases are source-only: GitHub generates a ZIP and tarball from the exact version tag, and users build locally. Do not attach an unsigned or ad-hoc-signed app and instruct users to weaken Gatekeeper.
 
-Notarization and Developer ID distribution require Apple Developer Program membership. If the project later gains that membership, a binary release carries one notarized ZIP per supported architecture plus its checksum and provenance record. A DMG adds presentation but no required security property, so it is deferred until the ZIP flow has shipped reliably.
+Notarization and Developer ID distribution require Apple Developer Program membership. If the project later gains that membership, a binary release carries a friendly DMG and portable ZIP per supported architecture, each with its own checksum and provenance record. `Scripts/create-dmg.sh` produces the native drag-to-Applications layout, signs the disk image, submits it separately to Apple, staples its ticket, and verifies Gatekeeper.
+
+Maintainers can exercise the complete visual installation flow without creating a publishable artifact:
+
+```sh
+make dmg-development
+```
+
+The resulting ad-hoc-signed image lives under `dist/development/` and is permanently excluded from the publisher.
 
 Homebrew Cask is deferred until the first stable notarized binary release. A cask does not replace Developer ID signing or notarization. When added, it must reference immutable versioned GitHub assets and their exact SHA-256 values. Start with a project-owned tap; propose the cask to Homebrew's main repository only after release URLs and maintenance practices are stable.
 
@@ -81,7 +91,7 @@ After obtaining Apple Developer Program membership and producing the notarized a
 make publish-release NOTES=dist/RELEASE_NOTES.md
 ```
 
-`Scripts/publish-release.sh` refuses a dirty or incorrectly tagged tree, an unpushed tag, incomplete artifact sets, a failed checksum, mismatched provenance, or a release that is not recorded as accepted and stapled by Apple. It creates a draft only and attaches every architecture's ZIP, checksum, and provenance without renaming them.
+`Scripts/publish-release.sh` refuses a dirty or incorrectly tagged tree, an unpushed tag, an architecture missing its paired DMG or ZIP, a failed checksum, mismatched provenance, or an artifact that is not recorded as accepted and stapled by Apple. It creates a draft only and attaches every architecture's DMG, ZIP, checksums, and provenance without renaming them.
 
 ## Publish
 

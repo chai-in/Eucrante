@@ -55,13 +55,14 @@ app_architectures="$(lipo -archs "$app_path/Contents/MacOS/Eucrante")"
 architecture_tag="${app_architectures// /-}"
 release_name="Eucrante-$version-$build-macOS-$architecture_tag.zip"
 release_path="$project_root/dist/$release_name"
-[[ ! -e "$release_path" && ! -e "$release_path.sha256" ]] \
-    || fail "release archive or checksum already exists: $release_name"
+[[ ! -e "$release_path" && ! -e "$release_path.sha256" \
+    && ! -e "$release_path.provenance.json" ]] \
+    || fail "release artifact already exists: $release_name"
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$release_path"
 release_sha256="$(shasum -a 256 "$release_path" | awk '{print $1}')"
 printf '%s  %s\n' "$release_sha256" "$release_name" > "$release_path.sha256"
 
-provenance_path="$project_root/dist/${release_name:r}.provenance.json"
+provenance_path="$release_path.provenance.json"
 plutil -create xml1 "$provenance_path"
 plutil -insert schemaVersion -integer 1 "$provenance_path"
 plutil -insert appVersion -string "$version" "$provenance_path"
@@ -85,6 +86,8 @@ for tool in yt-dlp deno ffmpeg; do
     plutil -insert "tools.$tool" -string "$digest" "$provenance_path"
 done
 plutil -convert json "$provenance_path"
+
+"$project_root/Scripts/create-dmg.sh" release "$app_path"
 
 echo "Notarized release: $release_path"
 echo "Checksum: $release_path.sha256"

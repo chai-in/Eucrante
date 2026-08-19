@@ -2,6 +2,8 @@
 
 Eucrante is a native macOS app for saving media directly on your Mac. There is no server, account, localhost service, Cloudflare setup, relay PC, or remote job store.
 
+[Website](https://chai-in.github.io/Eucrante/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
+
 ![Eucrante icon](App/Artwork/EucranteIcon.png)
 
 The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bundled Deno runtime for YouTube's JavaScript challenges, a minimal LGPL FFmpeg build for VP9 decoding, and Apple frameworks for HEVC encoding, inspection, merging, notifications, Finder integration, and Music import. Eucrante means “bringer of fulfillment” and is named for a Nereid of successful voyages.
@@ -46,10 +48,11 @@ Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass
 
 Eucrante is currently distributed as FOSS source through [GitHub Releases](https://github.com/chai-in/Eucrante/releases). Download a tagged source archive and build it locally using the steps above.
 
-The maintainer currently uses a free Apple developer account, which does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, download the ZIP matching your Mac architecture together with its `.sha256` file and verify it from the download directory:
+The maintainer currently uses a free Apple developer account, which does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, download the DMG matching your Mac architecture for the drag-to-Applications flow. A portable ZIP is also provided; verify either artifact with its matching `.sha256` file:
 
 ```sh
 shasum -a 256 -c Eucrante-*.zip.sha256
+shasum -a 256 -c Eucrante-*.dmg.sha256
 ```
 
 Homebrew Cask support is deferred until the first stable notarized binary release because Homebrew does not replace Apple signing or notarization.
@@ -61,6 +64,7 @@ Homebrew Cask support is deferred until the first stable notarized binary releas
 - [Preset policies](Docs/PRESETS.md)
 - [YouTube Premium boundary](Docs/YOUTUBE-PREMIUM.md)
 - [Release process](Docs/RELEASING.md)
+- [Repository settings](Docs/REPOSITORY.md)
 - [Security policy](SECURITY.md)
 - [Privacy](PRIVACY.md)
 

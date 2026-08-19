@@ -1,7 +1,7 @@
-.PHONY: check test coverage build app verify-app notarize publish-source-release publish-release clean
+.PHONY: check test coverage build app dmg-development verify-app notarize publish-source-release publish-release clean
 
 check:
-	swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift
+	swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift Scripts/render-dmg-background.swift
 	swift run EucranteCoreChecks
 
 test:
@@ -15,6 +15,9 @@ build:
 
 app:
 	./Scripts/build-app.sh release
+
+dmg-development: app
+	./Scripts/create-dmg.sh development
 
 verify-app:
 	./Scripts/verify-app.sh
