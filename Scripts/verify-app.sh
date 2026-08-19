@@ -103,7 +103,7 @@ for architecture in ${(z)app_architectures}; do
     "$contents/Resources/Tools/yt-dlp" \
     "$contents/Resources/Tools/deno" \
     "$contents/Resources/Tools/ffmpeg"; do
-    lipo -verify_arch "$architecture" "$executable" >/dev/null \
+    lipo "$executable" -verify_arch "$architecture" >/dev/null \
       || fail "${executable:t} does not support app architecture $architecture"
   done
 done
