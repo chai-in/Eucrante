@@ -16,7 +16,9 @@
 ## Before the first public binary
 
 - Add a clean-machine UI test for first launch, browser consent, folder permission, Music automation, and relaunch recovery.
-- Implement a separately reviewed signed update feed or keep automatic updates disabled; release provenance is already generated.
+- Ship tagged source-only GitHub Releases while the maintainer uses a free Apple developer account.
+- If Apple Developer Program membership becomes available, ship notarized GitHub binary releases, then add a project-owned Homebrew Cask after release URLs and architecture coverage are stable.
+- Implement a separately reviewed signed Sparkle update feed and signing-key recovery policy or keep automatic updates disabled; release provenance is already generated.
 - Run licensed SDR/HDR and mono/stereo/multichannel media fixtures.
 - Produce and clean-machine test the first notarized architecture-labelled artifact; source/build architecture policy is documented.
 

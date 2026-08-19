@@ -42,6 +42,18 @@ swift run EucranteCoreChecks
 
 Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass a temporary Netscape cookie file with `EUCRANTE_E2E_COOKIE_FILE`; the shipping app creates and immediately deletes its own file from its private WebKit session.
 
+## Install
+
+Eucrante is currently distributed as FOSS source through [GitHub Releases](https://github.com/chai-in/Eucrante/releases). Download a tagged source archive and build it locally using the steps above.
+
+The maintainer currently uses a free Apple developer account, which does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, download the ZIP matching your Mac architecture together with its `.sha256` file and verify it from the download directory:
+
+```sh
+shasum -a 256 -c Eucrante-*.zip.sha256
+```
+
+Homebrew Cask support is deferred until the first stable notarized binary release because Homebrew does not replace Apple signing or notarization.
+
 ## Architecture and product notes
 
 - [Architecture](Docs/ARCHITECTURE.md)
