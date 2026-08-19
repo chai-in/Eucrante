@@ -113,7 +113,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
   public init(
     tools: ToolPaths = .discover(),
     fileManager: FileManager = .default,
-    toolCheckTimeout: Duration = .seconds(8)
+    toolCheckTimeout: Duration = .seconds(30)
   ) {
     self.tools = tools
     self.fileManager = fileManager

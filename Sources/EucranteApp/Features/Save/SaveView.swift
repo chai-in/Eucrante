@@ -277,7 +277,7 @@ struct SaveView: View {
             Text(detail)
               .font(.caption2)
               .foregroundStyle(.secondary)
-              .lineLimit(1)
+              .lineLimit(2)
           }
         }
         Spacer(minLength: 0)
@@ -285,7 +285,7 @@ struct SaveView: View {
       .padding(.horizontal, 12)
       .frame(
         maxWidth: .infinity,
-        minHeight: model.mediaPreview == nil ? 52 : 60,
+        minHeight: model.mediaPreview == nil ? 52 : 68,
         alignment: .leading
       )
       .contentShape(Rectangle())
