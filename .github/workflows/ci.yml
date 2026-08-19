@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Show toolchain
         run: |
@@ -34,6 +36,7 @@ jobs:
       - name: Validate project files and scripts
         run: |
           plutil -lint App/Info.plist App/Eucrante.entitlements App/Deno.entitlements App/YtDLP.entitlements
+          ruby -e "require 'yaml'; YAML.safe_load(File.read('.github/dependabot.yml'))"
           zsh -n Scripts/*.sh
 
       - name: Build with warnings as errors

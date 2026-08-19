@@ -45,5 +45,6 @@ All notable changes to Eucrante will be documented here.
 ### Build
 
 - CI validates plist and shell syntax, enforces strict Swift formatting plus `58%` core and `16%` app line-coverage floors, and audits the assembled signed app bundle, tool architectures, licenses, identifier, icon, and restricted FFmpeg configuration.
+- CI checkout credentials are not persisted, and Dependabot groups weekly updates for pinned GitHub Actions.
 - The release script now requires a clean exact version tag and Developer ID signature before notarization, then emits an architecture-labelled archive, portable checksum, and JSON provenance record containing Apple's notarization request ID.
 - All nested tools and the app now use Hardened Runtime. Deno receives only its required V8 JIT entitlement; yt-dlp receives only the library-validation exception required by its extracted Python framework. The verifier rejects unexpected extra entitlements and exercises both helpers under their final signatures.
