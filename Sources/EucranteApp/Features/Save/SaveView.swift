@@ -139,7 +139,7 @@ struct SaveView: View {
             .frame(width: 44, height: 44)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityLabel("Automatic artwork from source")
+            .accessibilityLabel("Source artwork")
           } else {
             Image(systemName: "photo")
               .font(.title3)
@@ -153,7 +153,11 @@ struct SaveView: View {
             Text("Artwork")
               .foregroundStyle(.secondary)
             if model.musicMetadataDraft.artworkURL == nil, automatic?.artworkURL != nil {
-              Text("Automatic from source")
+              Text("Auto — Source artwork")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            } else if model.musicMetadataDraft.artworkURL == nil, model.mediaPreview != nil {
+              Text("Auto — None fetched")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             }
@@ -207,12 +211,15 @@ struct SaveView: View {
       Text(label)
         .font(.caption)
         .foregroundStyle(.secondary)
-      TextField(metadataPlaceholder(automatic, fallback: "Auto"), text: text)
+      TextField(metadataPlaceholder(automatic), text: text)
         .textFieldStyle(.roundedBorder)
     }
   }
 
-  private func metadataPlaceholder(_ value: String?, fallback: String = "Automatic") -> String {
+  private func metadataPlaceholder(
+    _ value: String?,
+    fallback: String = "Auto — None fetched"
+  ) -> String {
     guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
       return fallback
     }

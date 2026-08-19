@@ -8,7 +8,7 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 - Once a valid link resolves, show a compact thumbnail, title, creator, duration, and format count directly beneath it. Loading and sign-in-required states stay in the same space.
 - Four equally weighted one-click Apple output buttons.
 - Preset names stand on their own before a preview resolves. Afterward, add one compact factual line for the selected codec, container, quality, and exact or estimated size.
-- Keep the optional Music metadata editor collapsed beneath the preset grid. After preview resolves, empty controls show the exact automatic source values and artwork that will be imported; typed values remain explicit overrides. It may override title, artist, album, album artist, composer, genre, year, track, disc, and artwork without making one-click saves wait for a separate screen.
+- Keep the optional Music metadata editor collapsed beneath the preset grid. After preview resolves, empty controls show the exact automatic source values and artwork that will be imported; unavailable values read `Auto — None fetched`, and typed values remain explicit overrides. It may override title, artist, album, album artist, composer, genre, year, track, disc, and artwork without making one-click saves wait for a separate screen.
 - Custom controls remain collapsed until requested.
 - The output folder is always visible.
 - Starting an output reveals a persistent bottom shelf with the active preset, phase, progress, Queue, and Cancel controls; completion leaves a concise saved-file confirmation.
