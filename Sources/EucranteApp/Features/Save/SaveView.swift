@@ -18,6 +18,7 @@ struct SaveView: View {
       VStack(spacing: 20) {
         VStack(spacing: 18) {
           sourceField
+          mediaPreview
 
           LazyVGrid(columns: presetColumns, spacing: 10) {
             presetButton(.appleMusicBest, icon: "music.note")
@@ -203,6 +204,64 @@ struct SaveView: View {
     }
   }
 
+  @ViewBuilder
+  private var mediaPreview: some View {
+    if model.isLoadingPreview {
+      HStack(spacing: 10) {
+        ProgressView()
+          .controlSize(.small)
+        Text("Loading preview…")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+        Spacer()
+      }
+      .transition(.opacity)
+    } else if let preview = model.mediaPreview {
+      HStack(spacing: 14) {
+        AsyncImage(url: preview.metadata.artworkURL) { phase in
+          if case .success(let image) = phase {
+            image.resizable().scaledToFill()
+          } else {
+            Image(systemName: "play.rectangle.fill")
+              .font(.title2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .frame(width: 76, height: 76)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(preview.metadata.title ?? "Untitled media")
+            .font(.headline)
+            .lineLimit(2)
+          if let artist = preview.metadata.artist {
+            Text(artist)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+          Text(previewSummary(preview))
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .transition(.opacity)
+    } else if let message = model.previewMessage {
+      HStack(spacing: 8) {
+        Image(systemName: "info.circle")
+        Text(message)
+          .lineLimit(2)
+        Spacer()
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    }
+  }
+
   private func presetButton(_ preset: EucrantePreset, icon: String) -> some View {
     Button {
       Task { await model.submit(preset: preset) }
@@ -211,17 +270,52 @@ struct SaveView: View {
         Image(systemName: icon)
           .font(.title3)
           .frame(width: 24)
-        Text(preset.displayName)
-          .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(preset.displayName)
+            .fontWeight(.semibold)
+          if let detail = presetDetail(preset) {
+            Text(detail)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+        }
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 12)
-      .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: model.mediaPreview == nil ? 52 : 60,
+        alignment: .leading
+      )
       .contentShape(Rectangle())
     }
     .buttonStyle(.bordered)
     .disabled(!model.canSubmit)
     .accessibilityHint("Starts the save immediately when a valid link is present")
+  }
+
+  private func presetDetail(_ preset: EucrantePreset) -> String? {
+    guard let output = model.mediaPreview?.output(for: preset) else { return nil }
+    var parts = [output.codec, output.container]
+    if let quality = output.quality { parts.append(quality) }
+    if let bytes = output.estimatedByteCount {
+      let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+      parts.append(output.sizeIsEstimate ? "~\(size)" : size)
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  private func previewSummary(_ preview: MediaPreview) -> String {
+    var parts: [String] = []
+    if let album = preview.metadata.album { parts.append(album) }
+    if let year = preview.metadata.year { parts.append(String(year)) }
+    if let duration = preview.duration, duration.isFinite, duration > 0 {
+      let total = Int(duration.rounded())
+      parts.append(String(format: "%d:%02d", total / 60, total % 60))
+    }
+    parts.append("\(preview.formats.count) formats")
+    return parts.joined(separator: " · ")
   }
 
   @ViewBuilder

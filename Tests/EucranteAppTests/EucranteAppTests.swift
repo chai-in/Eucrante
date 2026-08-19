@@ -86,6 +86,24 @@ final class EucranteAppTests: XCTestCase {
     }
     render(EmptyView().eucranteCard())
     _ = Color.eucranteAccent
+
+    let previewModel = AppModel(
+      defaults: defaults,
+      localAcquirer: FixtureAcquirer(),
+      localPreviewer: FixturePreviewer(delay: .milliseconds(80)),
+      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      jobStore: JobStore(fileURL: root.appendingPathComponent("preview-jobs.json")),
+      previewDebounce: .zero
+    )
+    try await waitUntil { previewModel.localToolsReady }
+    previewModel.sourceText = "https://example.com/preview"
+    try await waitUntil { previewModel.isLoadingPreview }
+    render(SaveView(model: previewModel))
+    try await waitUntil { previewModel.mediaPreview != nil }
+    render(SaveView(model: previewModel))
+    previewModel.sourceText = "https://youtube.com/watch?v=fixture"
+    try await waitUntil { previewModel.previewMessage != nil }
+    render(SaveView(model: previewModel))
   }
 
   @MainActor
@@ -173,6 +191,50 @@ final class EucranteAppTests: XCTestCase {
       .missingFile, .scriptUnavailable, .rejected("detail"),
     ]
     XCTAssertTrue(errors.allSatisfy { $0.errorDescription?.isEmpty == false })
+  }
+
+  @MainActor
+  func testLinkPreviewDebouncesCancelsStaleResultsAndRequiresYouTubeSession() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "EucranteLinkPreviewTests-\(UUID().uuidString)", isDirectory: true)
+    let suiteName = "app.eucrante.link-preview.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let previewer = FixturePreviewer(delay: .milliseconds(60))
+    let model = AppModel(
+      defaults: defaults,
+      localAcquirer: FixtureAcquirer(),
+      localPreviewer: previewer,
+      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      jobStore: JobStore(fileURL: root.appendingPathComponent("jobs.json")),
+      previewDebounce: .milliseconds(5)
+    )
+    try await waitUntil { model.localToolsReady }
+
+    model.sourceText = "not a URL"
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertNil(model.mediaPreview)
+    let invalidRequestCount = await previewer.requestCount
+    XCTAssertEqual(invalidRequestCount, 0)
+
+    model.sourceText = "https://example.com/first"
+    try await Task.sleep(for: .milliseconds(20))
+    model.sourceText = "https://example.com/second"
+    try await waitUntil { model.mediaPreview?.metadata.title == "second" }
+    XCTAssertEqual(model.mediaPreview?.output(for: .appleMusicBest)?.codec, "AAC")
+    XCTAssertEqual(model.mediaPreview?.output(for: .appleVideoBest)?.codec, "HEVC")
+    XCTAssertNil(model.previewMessage)
+    let resolvedRequestCount = await previewer.requestCount
+    XCTAssertGreaterThanOrEqual(resolvedRequestCount, 2)
+
+    model.sourceText = "https://youtube.com/watch?v=fixture"
+    try await waitUntil {
+      model.previewMessage?.contains("Sign in to YouTube") == true
+    }
+    XCTAssertNil(model.mediaPreview)
   }
 
   func testMusicMetadataDraftValidatesNumbersAndBuildsOverrides() throws {
@@ -879,6 +941,47 @@ private actor FailingAcquirer: LocalMediaAcquiring {
     progress _: @escaping @Sendable (LocalAcquisitionProgress) -> Void
   ) async throws -> LocalAcquisitionResult {
     throw error
+  }
+}
+
+private actor FixturePreviewer: LocalMediaPreviewing {
+  let delay: Duration
+  private(set) var requestCount = 0
+
+  init(delay: Duration = .zero) {
+    self.delay = delay
+  }
+
+  func preview(
+    sourceURL: URL,
+    cookieFile _: URL?,
+    workingDirectory _: URL
+  ) async throws -> MediaPreview {
+    requestCount += 1
+    try await Task.sleep(for: delay)
+    try Task.checkCancellation()
+    return MediaPreview(
+      metadata: MediaMetadata(
+        title: sourceURL.lastPathComponent,
+        artist: "Fixture Artist",
+        album: "Fixture Album",
+        year: 2026,
+        sourceURL: sourceURL,
+        artworkURL: URL(string: "https://example.com/cover.jpg")
+      ),
+      duration: 180,
+      formats: [
+        MediaPreviewFormat(
+          identifier: "140", container: "m4a", videoCodec: "none",
+          audioCodec: "mp4a.40.2", width: nil, height: nil, frameRate: nil,
+          totalBitrate: 128, audioBitrate: 128, fileSize: 3_000_000,
+          approximateFileSize: nil),
+        MediaPreviewFormat(
+          identifier: "315", container: "webm", videoCodec: "vp9", audioCodec: "none",
+          width: 3_840, height: 2_160, frameRate: 60, totalBitrate: 12_000,
+          audioBitrate: nil, fileSize: nil, approximateFileSize: 250_000_000),
+      ]
+    )
   }
 }
 

@@ -6,8 +6,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
-  @Published var sourceText = ""
+  @Published var sourceText = "" {
+    didSet { schedulePreview() }
+  }
   @Published var musicMetadataDraft = MusicMetadataDraft()
+  @Published private(set) var mediaPreview: MediaPreview?
+  @Published private(set) var isLoadingPreview = false
+  @Published private(set) var previewMessage: String?
   @Published var selectedPreset: EucrantePreset = .custom
   @Published var preferences: DownloadPreferences {
     didSet {
@@ -57,6 +62,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var isCheckingLocalTools = false
 
   private let localAcquirer: any LocalMediaAcquiring
+  private let localPreviewer: (any LocalMediaPreviewing)?
   private let mediaProcessor: LocalMediaProcessor
   private let videoTranscoder: AppleVideoTranscoder
   private let youtubeSessionStore: any YouTubeSessionStoring
@@ -65,6 +71,9 @@ final class AppModel: ObservableObject {
   private let jobStore: JobStore
   private let defaults: UserDefaults
   private var activeTasks: [UUID: Task<Void, Never>] = [:]
+  private var previewTask: Task<Void, Never>?
+  private var previewRequestID = UUID()
+  private let previewDebounce: Duration
 
   private static let preferencesKey = "save.preferences.v1"
   private static let outputBookmarkKey = "downloads.output-bookmark.v1"
@@ -74,17 +83,21 @@ final class AppModel: ObservableObject {
   init(
     defaults: UserDefaults = .standard,
     localAcquirer: any LocalMediaAcquiring = LocalMediaAcquirer(),
+    localPreviewer: (any LocalMediaPreviewing)? = nil,
     mediaProcessor: LocalMediaProcessor = LocalMediaProcessor(),
     videoTranscoder: AppleVideoTranscoder = AppleVideoTranscoder(),
     youtubeSessionStore: any YouTubeSessionStoring = YouTubeSessionStore(),
-    jobStore: JobStore = JobStore()
+    jobStore: JobStore = JobStore(),
+    previewDebounce: Duration = .milliseconds(450)
   ) {
     self.defaults = defaults
     self.localAcquirer = localAcquirer
+    self.localPreviewer = localPreviewer ?? (localAcquirer as? any LocalMediaPreviewing)
     self.mediaProcessor = mediaProcessor
     self.videoTranscoder = videoTranscoder
     self.youtubeSessionStore = youtubeSessionStore
     self.jobStore = jobStore
+    self.previewDebounce = previewDebounce
     preferences =
       defaults.data(forKey: Self.preferencesKey)
       .flatMap { try? JSONDecoder().decode(DownloadPreferences.self, from: $0) }
@@ -109,6 +122,72 @@ final class AppModel: ObservableObject {
   var isSubmitting: Bool { activeJobCount > 0 }
   var activeJobs: [PersistentJob] { jobs.filter { $0.state.isActive } }
   var historyJobs: [PersistentJob] { jobs.filter { !$0.state.isActive } }
+
+  private func schedulePreview() {
+    previewTask?.cancel()
+    let requestID = UUID()
+    previewRequestID = requestID
+    mediaPreview = nil
+    previewMessage = nil
+    isLoadingPreview = false
+    let input = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !input.isEmpty else { return }
+    previewTask = Task { [weak self] in
+      guard let self else { return }
+      do {
+        try await Task.sleep(for: previewDebounce)
+        try Task.checkCancellation()
+        await loadPreview(for: input, requestID: requestID)
+      } catch is CancellationError {
+        return
+      } catch {
+        return
+      }
+    }
+  }
+
+  private func loadPreview(for input: String, requestID: UUID) async {
+    guard previewRequestID == requestID else { return }
+    guard let localPreviewer, localToolsReady,
+      let sourceURL = try? SourceURLValidator.validate(input)
+    else { return }
+    guard !Self.isYouTube(sourceURL) || youtubeSessionReady else {
+      previewMessage = "Sign in to YouTube in Eucrante to load Premium format details."
+      return
+    }
+    let previewDirectory = jobsRootDirectory.appendingPathComponent(
+      ".preview-\(UUID().uuidString)", isDirectory: true)
+    isLoadingPreview = true
+    defer {
+      if previewRequestID == requestID { isLoadingPreview = false }
+      try? FileManager.default.removeItem(at: previewDirectory)
+    }
+    do {
+      try SecureCredentialFile.prepareDirectory(previewDirectory)
+      let cookieFile =
+        Self.isYouTube(sourceURL)
+        ? try await youtubeSessionStore.exportCookieFile(to: previewDirectory)
+        : nil
+      let preview = try await localPreviewer.preview(
+        sourceURL: sourceURL,
+        cookieFile: cookieFile,
+        workingDirectory: previewDirectory
+      )
+      try Task.checkCancellation()
+      guard previewRequestID == requestID,
+        sourceText.trimmingCharacters(in: .whitespacesAndNewlines) == input
+      else { return }
+      mediaPreview = preview
+      previewMessage = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      guard previewRequestID == requestID,
+        sourceText.trimmingCharacters(in: .whitespacesAndNewlines) == input
+      else { return }
+      previewMessage = userMessage(for: error)
+    }
+  }
 
   func submit(preset: EucrantePreset? = nil) async {
     guard canSubmit else {
@@ -285,6 +364,7 @@ final class AppModel: ObservableObject {
         ?? "converter ready"
       localToolsMessage = "Ready · downloader \(downloader) · \(runtime) · \(transcoder)"
       drainQueue()
+      if !sourceText.isEmpty { schedulePreview() }
     } else {
       localToolsMessage = "Local media tools are missing. Reinstall Eucrante or rebuild the app."
     }
@@ -326,6 +406,7 @@ final class AppModel: ObservableObject {
 
   func refreshYouTubeSession() async {
     youtubeSessionReady = await youtubeSessionStore.hasAuthenticatedSession()
+    if youtubeSessionReady, !sourceText.isEmpty { schedulePreview() }
   }
 
   func signOutOfYouTube() async {

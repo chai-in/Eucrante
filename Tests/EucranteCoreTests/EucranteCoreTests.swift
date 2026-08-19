@@ -479,6 +479,88 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertEqual(bestQuality, .best)
   }
 
+  func testLocalAcquirerBuildsPreviewFromDownloaderJSON() async throws {
+    let root = temporaryDirectory("EucrantePreviewProbeTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let json =
+      #"{"id":"fixture-id","title":"Preview Title","uploader":"Creator","album":"Album","upload_date":"20250102","thumbnail":"https://example.com/cover.jpg","duration":125.5,"formats":[{"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","abr":129.2,"filesize":2030000},{"format_id":"315","ext":"webm","vcodec":"vp9","acodec":"none","width":3840,"height":2160,"fps":60,"tbr":13000,"filesize_approx":203000000}]}"#
+    let downloader = try executableScript(
+      "#!/bin/sh\nprintf '%s\\n' '\(json)'\n",
+      named: "preview-downloader",
+      in: root
+    )
+    let source = try XCTUnwrap(URL(string: "https://example.com/watch?v=fixture"))
+    let preview = try await acquirer(downloader: downloader).preview(
+      sourceURL: source,
+      cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("probe", isDirectory: true)
+    )
+    XCTAssertEqual(preview.metadata.title, "Preview Title")
+    XCTAssertEqual(preview.metadata.artist, "Creator")
+    XCTAssertEqual(preview.metadata.album, "Album")
+    XCTAssertEqual(preview.metadata.year, 2025)
+    XCTAssertEqual(preview.metadata.sourceID, "fixture-id")
+    XCTAssertEqual(preview.metadata.sourceURL, source)
+    XCTAssertEqual(preview.duration, 125.5)
+    XCTAssertEqual(preview.formats.count, 2)
+    XCTAssertEqual(preview.output(for: .appleMusicBest)?.codec, "AAC")
+    XCTAssertEqual(preview.output(for: .appleMusicBest)?.estimatedByteCount, 2_030_000)
+    XCTAssertEqual(preview.output(for: .appleVideoBest)?.codec, "HEVC")
+    XCTAssertEqual(preview.output(for: .appleVideoBest)?.quality, "2160p · 60 fps")
+    XCTAssertNil(preview.output(for: .custom))
+
+    let invalid = try executableScript(
+      "#!/bin/sh\nprintf 'not-json\\n'\n",
+      named: "invalid-preview-downloader",
+      in: root
+    )
+    await xctAssertThrowsErrorAsync(
+      try await acquirer(downloader: invalid).preview(
+        sourceURL: source,
+        cookieFile: nil,
+        workingDirectory: root.appendingPathComponent("invalid", isDirectory: true)
+      )
+    ) { error in
+      XCTAssertEqual(error as? LocalAcquisitionError, .previewUnavailable)
+    }
+  }
+
+  func testPresetPreviewSelectsAppleAudioCapsEfficientBitrateAndEstimatesSizes() throws {
+    let formats = [
+      MediaPreviewFormat(
+        identifier: "aac-high", container: "m4a", videoCodec: "none",
+        audioCodec: "mp4a.40.2", width: nil, height: nil, frameRate: nil,
+        totalBitrate: 300, audioBitrate: 300, fileSize: nil, approximateFileSize: nil),
+      MediaPreviewFormat(
+        identifier: "aac-efficient", container: "m4a", videoCodec: "none",
+        audioCodec: "mp4a.40.2", width: nil, height: nil, frameRate: nil,
+        totalBitrate: 256, audioBitrate: 256, fileSize: nil, approximateFileSize: 3_000_000),
+      MediaPreviewFormat(
+        identifier: "opus", container: "webm", videoCodec: "none", audioCodec: "opus",
+        width: nil, height: nil, frameRate: nil, totalBitrate: 500, audioBitrate: 500,
+        fileSize: 9_000_000, approximateFileSize: nil),
+      MediaPreviewFormat(
+        identifier: "h264", container: "mp4", videoCodec: "avc1.640028", audioCodec: "none",
+        width: 1_920, height: 1_080, frameRate: 30, totalBitrate: 5_000,
+        audioBitrate: nil, fileSize: 60_000_000, approximateFileSize: nil),
+    ]
+    let preview = MediaPreview(
+      metadata: MediaMetadata(title: "Fixture"), duration: 100, formats: formats)
+    let bestAudio = try XCTUnwrap(preview.output(for: .appleMusicBest))
+    XCTAssertEqual(bestAudio.quality, "300 kbps")
+    XCTAssertEqual(bestAudio.estimatedByteCount, 3_750_000)
+    XCTAssertTrue(bestAudio.sizeIsEstimate)
+    let efficientAudio = try XCTUnwrap(preview.output(for: .appleMusicEfficient))
+    XCTAssertEqual(efficientAudio.quality, "256 kbps")
+    XCTAssertEqual(efficientAudio.estimatedByteCount, 3_000_000)
+    let bestVideo = try XCTUnwrap(preview.output(for: .appleVideoBest))
+    XCTAssertEqual(bestVideo.codec, "H.264")
+    XCTAssertEqual(bestVideo.container, "MP4")
+    XCTAssertEqual(bestVideo.estimatedByteCount, 63_750_000)
+    XCTAssertTrue(bestVideo.sizeIsEstimate)
+    XCTAssertEqual(preview.output(for: .appleVideoEfficient)?.codec, "HEVC")
+  }
+
   func testLocalAcquirerToolDiscoveryStatusAndFailurePaths() async throws {
     let root = temporaryDirectory("EucranteAcquirerFailureTests")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1034,7 +1116,7 @@ final class EucranteCoreTests: XCTestCase {
   func testPublicErrorMessagesCoverEveryCase() {
     let acquisitionErrors: [LocalAcquisitionError] = [
       .toolsMissing, .processFailed(1), .authenticationRequired, .accessDenied,
-      .formatUnavailable, .outputMissing,
+      .formatUnavailable, .outputMissing, .previewUnavailable,
     ]
     XCTAssertTrue(acquisitionErrors.allSatisfy { $0.errorDescription?.isEmpty == false })
 

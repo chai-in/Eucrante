@@ -56,7 +56,15 @@ public protocol LocalMediaAcquiring: Sendable {
   ) async throws -> LocalAcquisitionResult
 }
 
-public actor LocalMediaAcquirer: LocalMediaAcquiring {
+public protocol LocalMediaPreviewing: Sendable {
+  func preview(
+    sourceURL: URL,
+    cookieFile: URL?,
+    workingDirectory: URL
+  ) async throws -> MediaPreview
+}
+
+public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
   public struct ToolPaths: Equatable, Sendable {
     public let ytDLP: URL
     public let deno: URL
@@ -294,6 +302,44 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     )
   }
 
+  public func preview(
+    sourceURL: URL,
+    cookieFile: URL?,
+    workingDirectory: URL
+  ) async throws -> MediaPreview {
+    guard toolsAreExecutable else { throw LocalAcquisitionError.toolsMissing }
+    try Task.checkCancellation()
+    try LocalProcessRunner.prepareRestrictedEnvironment(
+      homeDirectory: workingDirectory, fileManager: fileManager)
+    var arguments = [
+      "--ignore-config",
+      "--no-playlist",
+      "--no-warnings",
+      "--skip-download",
+      "--dump-single-json",
+      "--js-runtimes", "deno:\(tools.deno.path)",
+    ]
+    if let cookieFile {
+      arguments.append(contentsOf: ["--cookies", cookieFile.path])
+    }
+    arguments.append(sourceURL.absoluteString)
+    let lines = try await runner.run(
+      executable: tools.ytDLP,
+      arguments: arguments,
+      environment: LocalProcessRunner.restrictedEnvironment(homeDirectory: workingDirectory),
+      onLine: { _ in }
+    )
+    guard
+      let document = lines.reversed().lazy.compactMap({ line -> PreviewDocument? in
+        guard let data = line.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PreviewDocument.self, from: data)
+      }).first
+    else {
+      throw LocalAcquisitionError.previewUnavailable
+    }
+    return document.preview(sourceURL: sourceURL)
+  }
+
   private enum DownloadKind {
     case video
     case audio(maximumBitrate: Int?)
@@ -521,6 +567,7 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
   case accessDenied
   case formatUnavailable
   case outputMissing
+  case previewUnavailable
 
   public var errorDescription: String? {
     switch self {
@@ -536,7 +583,117 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
       "This link does not currently expose media that matches the selected output. Try another preset."
     case .outputMissing:
       "The provider returned no usable media file."
+    case .previewUnavailable:
+      "Eucrante could not read preview details for this link. You can still try saving it."
     }
+  }
+}
+
+private struct PreviewDocument: Decodable {
+  let id: String?
+  let title: String?
+  let track: String?
+  let artist: String?
+  let creator: String?
+  let uploader: String?
+  let channel: String?
+  let album: String?
+  let albumArtist: String?
+  let composer: String?
+  let genre: String?
+  let releaseDate: String?
+  let releaseYear: Int?
+  let uploadDate: String?
+  let trackNumber: Int?
+  let trackCount: Int?
+  let discNumber: Int?
+  let discCount: Int?
+  let description: String?
+  let thumbnail: String?
+  let duration: Double?
+  let formats: [PreviewFormatDocument]
+
+  enum CodingKeys: String, CodingKey {
+    case id, title, track, artist, creator, uploader, channel, album, composer, genre, description
+    case thumbnail, duration, formats
+    case albumArtist = "album_artist"
+    case releaseDate = "release_date"
+    case releaseYear = "release_year"
+    case uploadDate = "upload_date"
+    case trackNumber = "track_number"
+    case trackCount = "track_count"
+    case discNumber = "disc_number"
+    case discCount = "disc_count"
+  }
+
+  func preview(sourceURL: URL) -> MediaPreview {
+    let resolvedArtist = artist ?? creator ?? uploader ?? channel
+    let year =
+      releaseYear ?? releaseDate.flatMap { Int($0.prefix(4)) }
+      ?? uploadDate.flatMap { Int($0.prefix(4)) }
+    return MediaPreview(
+      metadata: MediaMetadata(
+        title: track ?? title,
+        artist: resolvedArtist,
+        album: album,
+        albumArtist: albumArtist ?? resolvedArtist,
+        composer: composer,
+        genre: genre,
+        year: year,
+        trackNumber: trackNumber,
+        trackCount: trackCount,
+        discNumber: discNumber,
+        discCount: discCount,
+        description: description,
+        sourceID: id,
+        sourceURL: sourceURL,
+        artworkURL: thumbnail.flatMap(URL.init(string:))
+      ),
+      duration: duration,
+      formats: formats.map(\.previewFormat)
+    )
+  }
+}
+
+private struct PreviewFormatDocument: Decodable {
+  let formatID: String
+  let ext: String?
+  let videoCodec: String?
+  let audioCodec: String?
+  let width: Int?
+  let height: Int?
+  let frameRate: Double?
+  let totalBitrate: Double?
+  let audioBitrate: Double?
+  let fileSize: Int64?
+  let approximateFileSize: Int64?
+
+  enum CodingKeys: String, CodingKey {
+    case ext, width, height
+    case formatID = "format_id"
+    case videoCodec = "vcodec"
+    case audioCodec = "acodec"
+    case frameRate = "fps"
+    case totalBitrate = "tbr"
+    case audioBitrate = "abr"
+    case fileSize = "filesize"
+    case approximateFileSize = "filesize_approx"
+  }
+
+  var previewFormat: MediaPreviewFormat {
+    MediaPreviewFormat(
+      identifier: formatID,
+      container: ext,
+      videoCodec: videoCodec,
+      audioCodec: audioCodec,
+      width: width,
+      height: height,
+      frameRate: frameRate,
+      totalBitrate: totalBitrate,
+      audioBitrate: audioBitrate,
+      fileSize: fileSize,
+      approximateFileSize: approximateFileSize
+    )
   }
 }
 
