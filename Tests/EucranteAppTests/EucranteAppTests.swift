@@ -24,15 +24,13 @@ final class EucranteAppTests: XCTestCase {
     let source = MusicLibraryImporter.scriptSource(
       fileURL: URL(fileURLWithPath: "/tmp/Bkab.m4a"),
       metadata: metadata,
-      artworkURL: URL(fileURLWithPath: "/tmp/cover.jpg"),
-      volumeAdjustment: 29
+      artworkURL: URL(fileURLWithPath: "/tmp/cover.jpg")
     )
 
     XCTAssertTrue(source.contains(#"set artist of importedTrack to "Ethan Stoller""#))
     XCTAssertTrue(source.contains(#"set album of importedTrack to "Bkab (Speechless Mix)""#))
     XCTAssertTrue(source.contains("set year of importedTrack to 2008"))
     XCTAssertTrue(source.contains("set track number of importedTrack to 1"))
-    XCTAssertTrue(source.contains("set importedTrack's volume adjustment to 29"))
     XCTAssertTrue(source.contains(#"Source ID: OANZ_nJyMtA"#))
     XCTAssertTrue(source.contains(#"Bkab \"Speechless\"\nMix"#))
     let script = try XCTUnwrap(NSAppleScript(source: source))

@@ -9,8 +9,6 @@ struct MusicLibraryImporter {
       throw MusicImportError.missingFile
     }
 
-    let volumeAdjustment =
-      (try? await AudioLevelAnalyzer.musicVolumeAdjustment(for: url)) ?? 0
     let artwork = await temporaryArtwork(for: metadata?.artworkURL)
     defer {
       if let artwork {
@@ -20,8 +18,7 @@ struct MusicLibraryImporter {
     let source = Self.scriptSource(
       fileURL: url,
       metadata: metadata,
-      artworkURL: artwork,
-      volumeAdjustment: volumeAdjustment
+      artworkURL: artwork
     )
     guard let script = NSAppleScript(source: source) else {
       throw MusicImportError.scriptUnavailable
@@ -41,8 +38,7 @@ struct MusicLibraryImporter {
   static func scriptSource(
     fileURL: URL,
     metadata: MediaMetadata?,
-    artworkURL: URL?,
-    volumeAdjustment: Int
+    artworkURL: URL?
   ) -> String {
     var assignments: [String] = []
     func setText(_ property: String, _ value: String?) {
@@ -67,8 +63,6 @@ struct MusicLibraryImporter {
     setNumber("track count", metadata?.trackCount)
     setNumber("disc number", metadata?.discNumber)
     setNumber("disc count", metadata?.discCount)
-    assignments.append("set importedTrack's volume adjustment to \(volumeAdjustment)")
-
     let commentParts = [
       metadata?.sourceURL.map { "Source: \($0.absoluteString)" },
       metadata?.sourceID.map { "Source ID: \($0)" },

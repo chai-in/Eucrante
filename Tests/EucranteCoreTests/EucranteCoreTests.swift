@@ -4,14 +4,6 @@ import XCTest
 @testable import EucranteCore
 
 final class EucranteCoreTests: XCTestCase {
-  func testMusicVolumeAdjustmentIsBoundedAndTargetsLibraryLevel() {
-    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -12), 0)
-    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -14.2), 29)
-    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -40), 50)
-    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -5), -25)
-    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: .nan), 0)
-  }
-
   func testJobStoreRoundTripsRichMusicMetadataAndDecodesLegacyJobs() throws {
     let metadata = MediaMetadata(
       title: "Bkab (Speechless Mix)",
