@@ -8,8 +8,8 @@ Describe the user-visible or developer-visible result.
 
 ## Verification
 
-- [ ] `swift format lint --recursive Sources Tests Package.swift`
-- [ ] `swift test`
+- [ ] `swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift`
+- [ ] `./Scripts/check-coverage.sh 37`
 - [ ] `swift build -Xswiftc -warnings-as-errors`
 - [ ] `swift run EucranteCoreChecks`
 - [ ] `make app` when packaging or UI behavior changed

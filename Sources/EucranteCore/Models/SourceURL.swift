@@ -8,6 +8,8 @@ public enum SourceURLValidator {
     guard let components = URLComponents(string: trimmed),
       let scheme = components.scheme?.lowercased(),
       ["http", "https"].contains(scheme),
+      components.user == nil,
+      components.password == nil,
       let host = components.host,
       !host.isEmpty,
       let url = components.url

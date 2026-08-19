@@ -81,7 +81,7 @@ struct AppShellView: View {
     VStack(spacing: 0) {
       Divider()
       HStack(spacing: 12) {
-        Image(systemName: "arrow.down.circle.fill")
+        Image(systemName: job.state == .queued ? "clock.fill" : "arrow.down.circle.fill")
           .font(.title2)
           .foregroundStyle(Color.eucranteAccent)
 
@@ -120,6 +120,11 @@ struct AppShellView: View {
             ProgressView()
               .progressViewStyle(.linear)
           }
+
+          Text(activeDetail(for: job))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
 
         Button("Queue") { selection = .queue }
@@ -133,5 +138,15 @@ struct AppShellView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(job.preset.displayName), \(job.state.displayName)")
+  }
+
+  private func activeDetail(for job: PersistentJob) -> String {
+    guard let completed = job.bytesCompleted, completed > 0 else {
+      return job.state == .queued ? "Waiting to start" : job.state.displayName
+    }
+    let formatter = ByteCountFormatter()
+    let current = formatter.string(fromByteCount: completed)
+    guard let expected = job.bytesExpected, expected > 0 else { return current }
+    return "\(current) of \(formatter.string(fromByteCount: expected))"
   }
 }

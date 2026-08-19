@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
   @ObservedObject var model: AppModel
+  @State private var showingClearHistoryConfirmation = false
 
   var body: some View {
     TabView {
@@ -20,6 +21,16 @@ struct SettingsView: View {
         .tabItem { Label("Privacy", systemImage: "hand.raised") }
     }
     .padding(20)
+    .confirmationDialog(
+      "Clear download history?",
+      isPresented: $showingClearHistoryConfirmation,
+      titleVisibility: .visible
+    ) {
+      Button("Clear History", role: .destructive) { model.clearHistory() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Downloaded files will stay on this Mac.")
+    }
   }
 
   private var video: some View {
@@ -30,11 +41,6 @@ struct SettingsView: View {
             Text(quality.displayName).tag(quality)
           }
         }
-        Text(
-          "Up to 1080p, Eucrante preserves H.264 without re-encoding. At 1440p and above, it downloads VP9 and uses Apple's hardware encoder to create HEVC/H.265 MP4."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
@@ -43,15 +49,8 @@ struct SettingsView: View {
   private var audio: some View {
     Form {
       Section("Apple audio") {
-        Text(
-          "Custom audio saves the best AAC/M4A track exposed by the provider. Use Music — Efficient for the storage-balanced policy."
-        )
-        .foregroundStyle(.secondary)
-        Text(
-          "Music — Best preserves the highest-quality Apple-compatible audio source Eucrante can verify."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        Label("Best available AAC/M4A", systemImage: "waveform")
+        Label("Apple Lossless when the source supports it", systemImage: "music.note")
       }
     }
     .formStyle(.grouped)
@@ -71,9 +70,6 @@ struct SettingsView: View {
               .font(.system(.body, design: .monospaced))
               .lineLimit(1)
               .truncationMode(.middle)
-            Text(model.preferences.filenameStyle.explanation)
-              .font(.caption)
-              .foregroundStyle(.secondary)
           }
           .animation(.easeInOut(duration: 0.15), value: model.preferences.filenameStyle)
         }
@@ -146,19 +142,6 @@ struct SettingsView: View {
             }
           }
         }
-        Text(
-          "YouTube saves require this private in-app session for reliable access. Eucrante does not read Brave, Safari, Chrome, or Firefox data. A temporary cookie file is created only while a save starts, then deleted immediately."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      }
-
-      Section {
-        Text(
-          "Everything runs inside Eucrante on this Mac. There is no server, localhost service, Cloudflare Worker, relay computer, or remote job store."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
@@ -178,15 +161,10 @@ struct SettingsView: View {
         )
         Label(
           "Diagnostics exclude source links and credentials", systemImage: "doc.badge.gearshape")
-        Button("Clear Local History", role: .destructive) { model.clearHistory() }
-          .disabled(model.historyJobs.isEmpty)
-      }
-      Section {
-        Text(
-          "Eucrante does not read other browsers. It does not bypass DRM or access controls."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        Button("Clear Local History", role: .destructive) {
+          showingClearHistoryConfirmation = true
+        }
+        .disabled(model.historyJobs.isEmpty)
       }
     }
     .formStyle(.grouped)

@@ -9,6 +9,8 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertEqual(url.host, "example.com")
     XCTAssertThrowsError(try SourceURLValidator.validate("file:///tmp/video.mp4"))
     XCTAssertThrowsError(try SourceURLValidator.validate("example.com/video"))
+    XCTAssertThrowsError(try SourceURLValidator.validate("https://user:secret@example.com/video"))
+    XCTAssertThrowsError(try SourceURLValidator.validate(String(repeating: "a", count: 8_193)))
   }
 
   func testFilenameSanitizerRemovesTraversalAndControlCharacters() {
@@ -26,7 +28,6 @@ final class EucranteCoreTests: XCTestCase {
       XCTAssertFalse(style.displayName.isEmpty)
       XCTAssertFalse(style.sampleFilename.isEmpty)
       XCTAssertTrue(style.sampleFilename.hasSuffix(".mp4"))
-      XCTAssertFalse(style.explanation.isEmpty)
     }
     XCTAssertEqual(FilenameStyle.basic.sampleFilename, "Midnight Drive.mp4")
     XCTAssertNotEqual(FilenameStyle.classic.sampleFilename, FilenameStyle.pretty.sampleFilename)
@@ -68,19 +69,14 @@ final class EucranteCoreTests: XCTestCase {
     var custom = DownloadPreferences()
     custom.downloadMode = .mute
     custom.videoQuality = .p360
-    custom.audioBitrate = .kbps64
 
     let music = EucrantePreset.appleMusicEfficient.requestPreferences(from: custom)
     XCTAssertEqual(music.downloadMode, .audio)
     XCTAssertEqual(music.videoQuality, .maximum)
-    XCTAssertEqual(music.audioBitrate, .kbps256)
 
     let video = EucrantePreset.appleVideoBest.requestPreferences(from: custom)
     XCTAssertEqual(video.downloadMode, .automatic)
     XCTAssertEqual(video.videoQuality, .maximum)
-    XCTAssertEqual(video.youtubeVideoCodec, .vp9)
-    XCTAssertEqual(video.youtubeVideoContainer, .mp4)
-    XCTAssertTrue(video.allowH265)
   }
 
   func testVideoSelectorPreservesH264FastPathThrough1080p() {
@@ -110,6 +106,7 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertTrue(arguments.contains("hevc_videotoolbox"))
     XCTAssertTrue(arguments.contains("hvc1"))
     XCTAssertTrue(arguments.contains("copy"))
+    XCTAssertEqual(arguments[arguments.firstIndex(of: "-allow_sw")! + 1], "1")
     XCTAssertFalse(arguments.contains("libx265"))
     XCTAssertEqual(arguments.last, "/tmp/output.mp4")
   }
@@ -119,6 +116,73 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertNotNil(parsed)
     XCTAssertEqual(parsed ?? 0, 1.25, accuracy: 0.0001)
     XCTAssertNil(AppleVideoTranscoder.parseProgressTime("progress=continue"))
+    XCTAssertEqual(AppleVideoTranscoder.parseProgressTime("out_time_ms=2500000") ?? 0, 2.5)
+  }
+
+  func testDownloaderProgressParsingUsesExactOrEstimatedTotal() throws {
+    let exact = try XCTUnwrap(LocalMediaAcquirer.parseProgress("EUCRANTE_PROGRESS:25:100:"))
+    XCTAssertEqual(exact.fraction ?? 0, 0.25)
+    XCTAssertEqual(exact.completed, 25)
+    XCTAssertEqual(exact.expected, 100)
+
+    let estimated = try XCTUnwrap(
+      LocalMediaAcquirer.parseProgress("EUCRANTE_PROGRESS:150::200"))
+    XCTAssertEqual(estimated.fraction ?? 0, 0.75)
+    XCTAssertEqual(estimated.expected, 200)
+
+    let clamped = try XCTUnwrap(
+      LocalMediaAcquirer.parseProgress("EUCRANTE_PROGRESS:300:200:"))
+    XCTAssertEqual(clamped.fraction, 1)
+    XCTAssertNil(LocalMediaAcquirer.parseProgress("[download] 25%"))
+    XCTAssertNil(LocalMediaAcquirer.parseProgress("EUCRANTE_PROGRESS:1:2"))
+  }
+
+  func testDownloaderErrorsAreActionableWithoutLeakingDiagnostics() {
+    XCTAssertEqual(
+      LocalMediaAcquirer.processError(status: 1, diagnostic: "Sign in to confirm you're not a bot"),
+      .authenticationRequired
+    )
+    XCTAssertEqual(
+      LocalMediaAcquirer.processError(status: 1, diagnostic: "HTTP Error 403: Forbidden"),
+      .accessDenied
+    )
+    XCTAssertEqual(
+      LocalMediaAcquirer.processError(
+        status: 1,
+        diagnostic: "Requested format is not available"
+      ),
+      .formatUnavailable
+    )
+    XCTAssertEqual(
+      LocalMediaAcquirer.processError(status: 17, diagnostic: "provider detail"),
+      .processFailed(17)
+    )
+    XCTAssertFalse(
+      LocalMediaAcquirer.processError(status: 17, diagnostic: "private-token")
+        .localizedDescription.contains("private-token")
+    )
+  }
+
+  func testDownloaderOutputSelectionRejectsEmptyFilesAndSymlinks() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EucranteOutputTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try Data().write(to: root.appendingPathComponent("audio.m4a"))
+    XCTAssertNil(try LocalMediaAcquirer.outputFile(prefix: "audio", in: root))
+
+    let target = root.appendingPathComponent("target.m4a")
+    try Data("media".utf8).write(to: target)
+    let link = root.appendingPathComponent("audio.mp4")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    XCTAssertNil(try LocalMediaAcquirer.outputFile(prefix: "audio", in: root))
+
+    let output = root.appendingPathComponent("audio.webm")
+    try Data("media".utf8).write(to: output)
+    XCTAssertEqual(
+      try LocalMediaAcquirer.outputFile(prefix: "audio", in: root)?.resolvingSymlinksInPath(),
+      output.resolvingSymlinksInPath()
+    )
   }
 
   func testJobStoreRoundTrip() async throws {
@@ -135,6 +199,12 @@ final class EucranteCoreTests: XCTestCase {
     )
 
     try await store.save([expected])
+    let mode = try XCTUnwrap(
+      FileManager.default.attributesOfItem(
+        atPath: root.appendingPathComponent("jobs.json").path
+      )[.posixPermissions] as? NSNumber
+    ).intValue
+    XCTAssertEqual(mode & 0o777, 0o600)
     let restored = try await store.load()
     XCTAssertEqual(restored.count, 1)
     XCTAssertEqual(restored.first?.id, expected.id)
@@ -146,6 +216,85 @@ final class EucranteCoreTests: XCTestCase {
     try await store.removeAll()
     let empty = try await store.load()
     XCTAssertEqual(empty, [])
+  }
+
+  func testLegacyPreferencesDecodeWhileIgnoringRemovedCobaltFields() throws {
+    let legacy = Data(
+      #"{"downloadMode":"audio","videoQuality":"720","filenameStyle":"pretty","alwaysProxy":true,"subtitleLanguage":"en","youtubeVideoCodec":"vp9","audioBitrate":"64"}"#
+        .utf8
+    )
+    let preferences = try JSONDecoder().decode(DownloadPreferences.self, from: legacy)
+    XCTAssertEqual(preferences.downloadMode, .audio)
+    XCTAssertEqual(preferences.videoQuality, .p720)
+    XCTAssertEqual(preferences.filenameStyle, .pretty)
+  }
+
+  func testUniqueDestinationAvoidsExistingAndReservedNames() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EucranteDestinationTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let original = root.appendingPathComponent("Track.m4a")
+    try Data("one".utf8).write(to: original)
+    let second = FileDestinationResolver.uniqueDestination(for: "Track.m4a", in: root)
+    XCTAssertEqual(second.lastPathComponent, "Track 2.m4a")
+    let third = FileDestinationResolver.uniqueDestination(
+      for: "Track.m4a",
+      in: root,
+      reservedPaths: [second.path]
+    )
+    XCTAssertEqual(third.lastPathComponent, "Track 3.m4a")
+  }
+
+  func testSecureCredentialFileUsesPrivatePermissionsBeforeWriting() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EucranteCredentialTests-\(UUID().uuidString)", isDirectory: true)
+    let directory = root.appendingPathComponent("job", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let contents = Data("private-session".utf8)
+    let file = try SecureCredentialFile.write(
+      contents,
+      named: ".credentials",
+      to: directory
+    )
+
+    XCTAssertEqual(try Data(contentsOf: file), contents)
+    let directoryMode = try XCTUnwrap(
+      FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber
+    ).intValue
+    let fileMode = try XCTUnwrap(
+      FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
+    ).intValue
+    XCTAssertEqual(directoryMode & 0o777, 0o700)
+    XCTAssertEqual(fileMode & 0o777, 0o600)
+  }
+
+  func testSecureCredentialDirectoryRepairsExistingPermissions() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o755]
+    )
+
+    try SecureCredentialFile.prepareDirectory(root)
+
+    let attributes = try FileManager.default.attributesOfItem(atPath: root.path)
+    XCTAssertEqual(attributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o700))
+  }
+
+  func testSecureCredentialFileRejectsPathComponents() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EucranteCredentialTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    XCTAssertThrowsError(
+      try SecureCredentialFile.write(Data(), named: "../credentials", to: root)
+    ) { error in
+      XCTAssertEqual(error as? SecureCredentialFileError, .invalidFilename)
+    }
   }
 
   func testEfficientMusicPresetCreatesVerifiedAAC() async throws {
@@ -175,6 +324,39 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertEqual(processed.url.pathExtension, "m4a")
     XCTAssertNotNil(processed.output.audioCodec)
     XCTAssertGreaterThan(processed.output.fileSize, 0)
+  }
+
+  func testConcurrentSavesReserveDistinctDestinationNames() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EucranteConcurrentTests-\(UUID().uuidString)", isDirectory: true)
+    let inputDirectory = root.appendingPathComponent("input", isDirectory: true)
+    let outputDirectory = root.appendingPathComponent("output", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let input = inputDirectory.appendingPathComponent("tone.wav")
+    try makeTone(at: input)
+    let processor = LocalMediaProcessor()
+    do {
+      async let first = processor.process(
+        input,
+        preset: .appleMusicEfficient,
+        suggestedFilename: "Same Track.wav",
+        destination: outputDirectory
+      )
+      async let second = processor.process(
+        input,
+        preset: .appleMusicEfficient,
+        suggestedFilename: "Same Track.wav",
+        destination: outputDirectory
+      )
+      let (firstResult, secondResult) = try await (first, second)
+      let outputs = [firstResult.url, secondResult.url]
+      XCTAssertEqual(Set(outputs.map(\.lastPathComponent)).count, 2)
+      XCTAssertTrue(outputs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+    } catch MediaProcessingError.codecUnavailable {
+      throw XCTSkip("The active macOS beta does not expose the system AAC encoder.")
+    }
   }
 
   private func makeTone(at url: URL) throws {

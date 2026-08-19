@@ -21,16 +21,6 @@ extension EucrantePreset {
     }
   }
 
-  public var shortDetail: String {
-    switch self {
-    case .appleMusicBest: "Best Apple-compatible audio"
-    case .appleMusicEfficient: "Best available AAC · smaller"
-    case .appleVideoBest: "Best source · up to 4K HEVC"
-    case .appleVideoEfficient: "Storage-balanced HEVC"
-    case .custom: "Your current settings"
-    }
-  }
-
   public var isAudio: Bool {
     self == .appleMusicBest || self == .appleMusicEfficient
   }
@@ -41,20 +31,12 @@ extension EucrantePreset {
     guard self != .custom else { return custom }
     var value = custom
     value.videoQuality = .maximum
-    value.audioFormat = .best
-    value.disableMetadata = false
-    value.localProcessing = .preferred
 
     switch self {
     case .appleMusicBest, .appleMusicEfficient:
       value.downloadMode = .audio
-      value.audioBitrate = self == .appleMusicEfficient ? .kbps256 : .kbps320
     case .appleVideoBest, .appleVideoEfficient:
       value.downloadMode = .automatic
-      value.youtubeVideoCodec = .vp9
-      value.youtubeVideoContainer = .mp4
-      value.allowH265 = true
-      value.audioBitrate = self == .appleVideoEfficient ? .kbps256 : .kbps320
     case .custom:
       break
     }

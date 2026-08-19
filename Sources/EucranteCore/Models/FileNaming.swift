@@ -4,10 +4,12 @@ public enum FileDestinationResolver {
   public static func uniqueDestination(
     for filename: String,
     in directory: URL,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    reservedPaths: Set<String> = []
   ) -> URL {
     let proposed = directory.appendingPathComponent(filename, isDirectory: false)
-    guard fileManager.fileExists(atPath: proposed.path) else { return proposed }
+    guard fileManager.fileExists(atPath: proposed.path) || reservedPaths.contains(proposed.path)
+    else { return proposed }
 
     let extensionName = proposed.pathExtension
     let stem = proposed.deletingPathExtension().lastPathComponent
@@ -17,7 +19,9 @@ public enum FileDestinationResolver {
         ? "\(stem) \(suffix)"
         : "\(stem) \(suffix).\(extensionName)"
       let candidate = directory.appendingPathComponent(candidateName, isDirectory: false)
-      if !fileManager.fileExists(atPath: candidate.path) { return candidate }
+      if !fileManager.fileExists(atPath: candidate.path), !reservedPaths.contains(candidate.path) {
+        return candidate
+      }
     }
     return directory.appendingPathComponent(
       UUID().uuidString + (extensionName.isEmpty ? "" : ".\(extensionName)"))

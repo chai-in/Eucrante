@@ -4,14 +4,15 @@
 
 - Native SwiftUI app shell and four Apple-oriented one-click policies.
 - Local pinned `yt-dlp`, Deno, and reproducibly built LGPL FFmpeg helper installation, embedding, and nested code signing.
-- Optional private in-app YouTube session with no external-browser dependency.
-- Lossless local H.264 + AAC through 1080p, plus VP9-to-Apple-hardware-HEVC for verified 4K SDR output.
+- Private in-app YouTube session with no external-browser dependency, required only for YouTube saves.
+- Lossless local H.264 + AAC through 1080p, plus VP9-to-Apple-VideoToolbox-HEVC for verified 4K SDR output.
 - AVFoundation inspection, output verification, cancellation, queue/history, Finder, Trash, notifications, and Music import.
 - Exact local YouTube end-to-end developer check.
+- Signed-bundle audit, branded reproducible app icon, app/core security-boundary tests, and an enforced coverage floor.
 
 ## Before the first public binary
 
-- Add process-runner fixture tests for progress, cancellation, malformed output, and browser argument construction.
+- Add process-runner fixture tests for child-process cancellation and malformed streaming output; progress, error classification, output selection, symlink rejection, and authenticated navigation boundaries are covered.
 - Add a clean-machine UI test for first launch, browser consent, folder permission, Music automation, and relaunch recovery.
 - Add update provenance and a signed release-feed policy.
 - Run licensed SDR/HDR and mono/stereo/multichannel media fixtures.

@@ -13,27 +13,15 @@ struct SaveView: View {
 
   var body: some View {
     ScrollView {
-      VStack(spacing: 24) {
-        VStack(spacing: 6) {
-          Text("Save something you love")
-            .font(.system(size: 28, weight: .semibold))
-          Text("Choose a ready-made Apple output or open Custom controls.")
-            .foregroundStyle(.secondary)
-        }
-        .multilineTextAlignment(.center)
-
+      VStack(spacing: 20) {
         VStack(spacing: 18) {
           sourceField
 
-          VStack(alignment: .leading, spacing: 10) {
-            Text("One-click outputs")
-              .font(.headline)
-            LazyVGrid(columns: presetColumns, spacing: 10) {
-              presetButton(.appleMusicBest, icon: "music.note")
-              presetButton(.appleMusicEfficient, icon: "waveform.badge.minus")
-              presetButton(.appleVideoBest, icon: "film")
-              presetButton(.appleVideoEfficient, icon: "rectangle.compress.vertical")
-            }
+          LazyVGrid(columns: presetColumns, spacing: 10) {
+            presetButton(.appleMusicBest, icon: "music.note")
+            presetButton(.appleMusicEfficient, icon: "waveform.badge.minus")
+            presetButton(.appleVideoBest, icon: "film")
+            presetButton(.appleVideoEfficient, icon: "rectangle.compress.vertical")
           }
 
           Divider()
@@ -136,19 +124,12 @@ struct SaveView: View {
         Image(systemName: icon)
           .font(.title3)
           .frame(width: 24)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(preset.displayName)
-            .fontWeight(.semibold)
-          Text(preset.shortDetail)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
+        Text(preset.displayName)
+          .fontWeight(.semibold)
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+      .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.bordered)

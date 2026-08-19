@@ -39,6 +39,7 @@ ditto "$project_root/ThirdParty" "$contents/Resources/Licenses"
 mkdir -p "$contents/Resources/Licenses/ffmpeg"
 ditto "$project_root/.build/eucrante-tools/ffmpeg-licenses" "$contents/Resources/Licenses/ffmpeg"
 ditto "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NOTICES.md"
+"$project_root/Scripts/build-icon.sh" "$contents/Resources/Eucrante.icns"
 
 signing_identity="${CODESIGN_IDENTITY:--}"
 if [[ "$signing_identity" == "-" ]]; then
@@ -53,6 +54,6 @@ else
     codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$signing_identity" "$app_bundle"
 fi
 
-codesign --verify --deep --strict --verbose=2 "$app_bundle"
+"$project_root/Scripts/verify-app.sh" "$app_bundle"
 codesign --display --entitlements - "$app_bundle"
 echo "Built $app_bundle"

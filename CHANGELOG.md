@@ -13,15 +13,27 @@ All notable changes to Eucrante will be documented here.
 - Pinned, checksum-verified, reproducible LGPL FFmpeg 9.0.1 source build with GPL, non-free, network, x264, and x265 components excluded.
 - Four Apple-oriented one-click policies, filename previews, local queue/history, cancellation, retry, notifications, Finder/Trash actions, and explicit Music import.
 - Persistent bottom download progress with the active preset, concrete phase, percentage when available, queue access, and cancellation.
+- Branded, reproducibly generated macOS app icon with a complete `.icns` size pyramid.
+- App-layer navigation tests, downloader parser/error/output tests, concurrent destination tests, secure-file tests, and an enforced coverage floor.
 
 ### Changed
 
 - Removed the Cloudflare Worker/Container/R2 architecture and every server/account setup screen.
 - Diagnostics now report only local tool readiness, whether an in-app YouTube session exists, preferences, and job-state counts.
-- The in-app YouTube browser now uses a compact native toolbar and leaves the rest of the window to the website.
+- The in-app YouTube browser uses a compact native toolbar and shows the website only while sign-in or account switching is needed.
+- Save now presents only essential controls, Queue rows preserve horizontal alignment, and a ready session uses a concise native state instead of YouTube's account page.
+- Removed inherited Cobalt settings that the fully local engine did not honor.
+- Destructive history clearing now requires confirmation and states that downloaded files are preserved.
+- Apple VideoToolbox HEVC conversion may use Apple's software fallback when hardware encoding is unavailable.
 
 ### Security
 
 - Helper releases and SHA-256 digests are pinned; build fails on mismatch.
 - Helper invocation uses `Process` argument arrays and never invokes a shell.
-- Temporary in-app-session cookie exports use mode `0600`, are presented only to the provider, and are deleted after acquisition on both success and failure.
+- Temporary in-app-session cookie exports are created inside mode-`0700` job directories with mode `0600` before any credential bytes are written, are used only for YouTube jobs, and are deleted after acquisition on both success and failure.
+- Job history uses mode-`0600` same-directory atomic replacement; downloader output discovery rejects empty files and symbolic links.
+- The embedded sign-in browser has an automated HTTPS/domain allowlist contract that rejects lookalike hosts.
+
+### Build
+
+- CI validates plist and shell syntax, enforces strict Swift formatting and a `37%` EucranteCore line-coverage floor, and audits the assembled signed app bundle, tools, licenses, identifier, icon, and restricted FFmpeg configuration.

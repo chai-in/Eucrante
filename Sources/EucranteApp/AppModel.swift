@@ -283,9 +283,18 @@ final class AppModel: ObservableObject {
   }
 
   func signOutOfYouTube() async {
+    let activeYouTubeJobs = activeJobs.filter { Self.isYouTube($0.sourceURL) }
+    for job in activeYouTubeJobs {
+      cancel(job.id)
+    }
+    purgeTransientCookieExports()
     await youtubeSessionStore.clear()
     youtubeSessionReady = false
-    statusMessage = "Removed Eucrante's private YouTube session."
+    let saveLabel = activeYouTubeJobs.count == 1 ? "save" : "saves"
+    statusMessage =
+      activeYouTubeJobs.isEmpty
+      ? "Removed Eucrante's private YouTube session."
+      : "Signed out and cancelled \(activeYouTubeJobs.count) active YouTube \(saveLabel)."
   }
 
   func reveal(_ url: URL) {
@@ -390,13 +399,15 @@ final class AppModel: ObservableObject {
     do {
       let jobPreferences = job.preset.requestPreferences(from: preferences)
       let staging = stagingDirectory(for: job.id)
+      try SecureCredentialFile.prepareDirectory(jobsRootDirectory)
+      try SecureCredentialFile.prepareDirectory(staging)
       update(job.id) {
         $0.state = .downloading
         $0.stagingPath = staging.path
         $0.updatedAt = .now
       }
       let cookieFile =
-        youtubeSessionReady
+        Self.isYouTube(job.sourceURL) && youtubeSessionReady
         ? try await youtubeSessionStore.exportCookieFile(to: staging)
         : nil
       let result: LocalAcquisitionResult
@@ -659,6 +670,7 @@ final class AppModel: ObservableObject {
   }
 
   private func purgeTransientCookieExports() {
+    try? SecureCredentialFile.prepareDirectory(jobsRootDirectory)
     guard
       let jobDirectories = try? FileManager.default.contentsOfDirectory(
         at: jobsRootDirectory,
@@ -667,6 +679,7 @@ final class AppModel: ObservableObject {
       )
     else { return }
     for directory in jobDirectories {
+      try? SecureCredentialFile.prepareDirectory(directory)
       let cookieFile = directory.appendingPathComponent(".eucrante-youtube-cookies.txt")
       if FileManager.default.fileExists(atPath: cookieFile.path) {
         try? FileManager.default.removeItem(at: cookieFile)
@@ -718,7 +731,7 @@ final class AppModel: ObservableObject {
     return resolved.url
   }
 
-  private static func isYouTube(_ url: URL) -> Bool {
+  nonisolated static func isYouTube(_ url: URL) -> Bool {
     guard let host = url.host?.lowercased() else { return false }
     return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
   }

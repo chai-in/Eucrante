@@ -2,15 +2,17 @@
 
 Eucrante is a native macOS app for saving media directly on your Mac. There is no server, account, localhost service, Cloudflare setup, relay PC, or remote job store.
 
+![Eucrante icon](App/Artwork/EucranteIcon.png)
+
 The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bundled Deno runtime for YouTube's JavaScript challenges, a minimal LGPL FFmpeg build for VP9 decoding, and Apple frameworks for HEVC encoding, inspection, merging, notifications, Finder integration, and Music import. Eucrante means “bringer of fulfillment” and is named for a Nereid of successful voyages.
 
 ## Current product
 
 - Four one-click Apple output policies: Music Best, Music Efficient, Video Best, and Video Efficient.
-- Local YouTube downloads with an optional private YouTube sign-in inside Eucrante.
+- Local YouTube downloads with a private YouTube sign-in inside Eucrante; no sign-in is needed for other supported providers.
 - YouTube Premium formats are requested from the same app and Mac network context; Eucrante never reads another browser's files.
 - H.264 through 1080p is merged with AAC locally without generation loss.
-- 1440p and 4K VP9 sources are converted locally to Apple-native HEVC/H.265 with hardware encoding; compatible AAC is copied without another lossy audio encode.
+- 1440p and 4K VP9 sources are converted locally to Apple-native HEVC/H.265 with VideoToolbox hardware acceleration when available and Apple's software fallback otherwise; compatible AAC is copied without another lossy audio encode.
 - Finished files are inspected before the job is marked complete.
 - Local queue/history, cancellation, retry, custom output folder, Finder reveal, Trash, notifications, and explicit Music import.
 - Filename-style previews in Settings that match the actual saved names.
@@ -24,6 +26,7 @@ Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain.
 
 ```sh
 swift test -Xswiftc -warnings-as-errors
+./Scripts/check-coverage.sh 37
 swift run EucranteCoreChecks
 make app
 ```

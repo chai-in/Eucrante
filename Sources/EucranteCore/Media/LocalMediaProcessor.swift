@@ -73,6 +73,7 @@ public protocol MediaProcessing: Sendable {
 
 public actor LocalMediaProcessor: MediaProcessing {
   private let fileManager: FileManager
+  private var reservedDestinationPaths: Set<String> = []
 
   public init(fileManager: FileManager = .default) {
     self.fileManager = fileManager
@@ -313,11 +314,8 @@ public actor LocalMediaProcessor: MediaProcessing {
   private func copy(_ input: URL, named name: String, to destination: URL) throws -> URL {
     try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
     let safe = FilenameSanitizer.sanitize(name)
-    let output = FileDestinationResolver.uniqueDestination(
-      for: safe,
-      in: destination,
-      fileManager: fileManager
-    )
+    let output = reserveDestination(for: safe, in: destination)
+    defer { releaseDestination(output) }
     do {
       try fileManager.copyItem(at: input, to: output)
       return output
@@ -358,19 +356,24 @@ public actor LocalMediaProcessor: MediaProcessing {
     guard exporter.supportedFileTypes.contains(fileType) else {
       throw MediaProcessingError.unsupportedOutput
     }
-    let output = FileDestinationResolver.uniqueDestination(
+    let output = reserveDestination(
       for: FilenameSanitizer.sanitize(filename),
-      in: destination,
-      fileManager: fileManager
+      in: destination
     )
+    defer { releaseDestination(output) }
     exporter.outputURL = output
     exporter.outputFileType = fileType
     exporter.shouldOptimizeForNetworkUse = true
     exporter.metadataItemFilter = .forSharing()
+    let cancellableExporter = CancellableExportSession(exporter)
 
     progress(0.05)
-    await withCheckedContinuation { continuation in
-      exporter.exportAsynchronously { continuation.resume() }
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        cancellableExporter.export { continuation.resume() }
+      }
+    } onCancel: {
+      cancellableExporter.cancel()
     }
     try Task.checkCancellation()
 
@@ -566,6 +569,21 @@ public actor LocalMediaProcessor: MediaProcessing {
     return "\(stem).\(ext)"
   }
 
+  private func reserveDestination(for filename: String, in directory: URL) -> URL {
+    let output = FileDestinationResolver.uniqueDestination(
+      for: filename,
+      in: directory,
+      fileManager: fileManager,
+      reservedPaths: reservedDestinationPaths
+    )
+    reservedDestinationPaths.insert(output.path)
+    return output
+  }
+
+  private func releaseDestination(_ url: URL) {
+    reservedDestinationPaths.remove(url.path)
+  }
+
   private func codecName(_ description: CMFormatDescription) -> String {
     let code = CMFormatDescriptionGetMediaSubType(description)
     let bytes: [UInt8] = [
@@ -595,6 +613,22 @@ public actor LocalMediaProcessor: MediaProcessing {
       return underlying.code == 1_718_449_215
     }
     return false
+  }
+}
+
+private final class CancellableExportSession: @unchecked Sendable {
+  private let exporter: AVAssetExportSession
+
+  init(_ exporter: AVAssetExportSession) {
+    self.exporter = exporter
+  }
+
+  func export(completion: @escaping @Sendable () -> Void) {
+    exporter.exportAsynchronously(completionHandler: completion)
+  }
+
+  func cancel() {
+    exporter.cancelExport()
   }
 }
 

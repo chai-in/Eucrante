@@ -10,8 +10,8 @@ Presets are output policies, not promises that every provider exposes a lossless
 | --- | --- | --- | --- |
 | Apple Music — Best | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified source `.m4a` | Preserve the best directly compatible source without generation loss |
 | Apple Music — Efficient | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified AAC `.m4a`; preserve a suitable existing source | Storage-conscious without unnecessary re-encoding |
-| Apple Video — Best | Best H.264 through 1080p; VP9 for 1440p/4K; best AAC | Preserved H.264 or high-quality hardware HEVC in MP4 | Preserve resolution and favor picture quality |
-| Apple Video — Efficient | Same resolution policy and compatible AAC | Storage-balanced hardware HEVC + AAC | Smaller Apple-native output without upscaling or minimum-size compromises |
+| Apple Video — Best | Best H.264 through 1080p; VP9 for 1440p/4K; best AAC | Preserved H.264 or high-quality VideoToolbox HEVC in MP4 | Preserve resolution and favor picture quality |
+| Apple Video — Efficient | Same resolution policy and compatible AAC | Storage-balanced VideoToolbox HEVC + AAC | Smaller Apple-native output without upscaling or minimum-size compromises |
 
 The main screen exposes these as four primary buttons. Once a valid URL is present, choosing a preset creates the job immediately; advanced controls create a Custom policy instead of silently modifying a named preset.
 
@@ -46,7 +46,7 @@ If the provider exposes only one suitable AAC source, Best and Efficient may pre
 Goal: preserve the highest Apple-compatible picture quality in a format supported by current Apple playback and library apps.
 
 1. Through 1080p, request H.264 MP4 video and AAC/M4A audio and merge locally without re-encoding.
-2. At 1440p and above, prefer VP9 video, decode locally, and encode high-quality HEVC using Apple VideoToolbox hardware; copy compatible AAC without another lossy encode.
+2. At 1440p and above, prefer VP9 video, decode locally, and encode high-quality HEVC using Apple VideoToolbox; use hardware acceleration when available and Apple's software fallback otherwise, and copy compatible AAC without another lossy encode.
 3. Preserve source resolution, frame rate, aspect ratio, and compatible color metadata. Never upscale.
 4. Tag HEVC as `hvc1` and use `.mp4` output for Apple playback.
 
@@ -57,7 +57,7 @@ The 4K SDR path is live and verified. HDR preservation is not yet promised; HDR/
 Goal: materially smaller files while retaining strong visual quality and Apple compatibility.
 
 1. Request the same resolution and codec source policy as Video Best.
-2. Encode VP9 video as HEVC using Apple VideoToolbox hardware with a storage-balanced quality setting, retaining source resolution and never upscaling.
+2. Encode VP9 video as HEVC using Apple VideoToolbox with a storage-balanced quality setting, retaining source resolution and never upscaling; use hardware acceleration when available and Apple's software fallback otherwise.
 3. This is not a minimum-size mode and does not use low-quality compatibility settings.
 4. Do not claim HDR preservation until HDR/color fixtures ship.
 5. Keep Apple-compatible AAC audio in the output.

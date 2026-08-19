@@ -38,5 +38,9 @@ let package = Package(
       name: "EucranteCoreTests",
       dependencies: ["EucranteCore"]
     ),
+    .testTarget(
+      name: "EucranteAppTests",
+      dependencies: ["EucranteApp"]
+    ),
   ]
 )

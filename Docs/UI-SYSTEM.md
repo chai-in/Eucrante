@@ -6,6 +6,7 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 
 - One prominent link field.
 - Four equally weighted one-click Apple output buttons.
+- Preset names stand on their own; do not add explanatory subtitles to the main action grid.
 - Custom controls remain collapsed until requested.
 - The output folder is always visible.
 - Starting an output reveals a persistent bottom shelf with the active preset, phase, progress, Queue, and Cancel controls; completion leaves a concise saved-file confirmation.
@@ -15,9 +16,9 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 
 - Show whether the embedded local tools are ready.
 - Show a single **Sign In to YouTube** action backed by Eucrante's private in-app WebKit session.
-- Explain that Eucrante does not read an external browser and that nothing is uploaded to Eucrante infrastructure.
 - Provide **Sign Out of Eucrante** to remove the app-owned WebKit session.
 - In the sign-in sheet, provide **Open Passwords** for a Touch ID-protected copy/paste flow. Do not claim `webcredentials` association with Google/YouTube or read credentials into Eucrante; Apple suppresses automatic suggestions for unassociated third-party web views as an anti-phishing boundary.
+- When the session is ready, replace YouTube's account page with one native connected state. Show the embedded account chooser only when sign-in or account switching is needed.
 - Keep the sign-in sheet chrome to one compact toolbar; do not repeat setup explanations around the website.
 - Never describe sign-in as a password import or claim a Premium format exists when the provider did not expose one.
 

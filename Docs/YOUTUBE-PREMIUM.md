@@ -8,14 +8,14 @@ This design replaced the Cloudflare experiment. Testing showed that authenticate
 
 ## Current behavior
 
-- The private in-app session is optional and off by default.
+- The private in-app session is off by default and required only for YouTube saves.
 - Eucrante does not request Files & Folders access to Brave, Safari, Chrome, Firefox, or another browser.
 - The session persists in Eucrante's own WebKit store until the user chooses **Sign Out of Eucrante**.
-- Per-job cookie exports use mode `0600` and are deleted immediately after acquisition succeeds or fails.
+- Per-job cookie exports are created only for YouTube jobs inside mode-`0700` directories, use mode `0600` before any bytes are written, and are deleted immediately after acquisition succeeds or fails.
 - Premium may expose higher-bitrate audio or authenticated formats, but not every video has a distinct “Premium” 1080p entry.
 - Through 1080p, Eucrante selects H.264 plus AAC and merges locally without re-encoding. For 1440p/4K it prefers VP9 and converts locally to Apple-native HEVC while copying AAC.
 - DRM-protected media remains out of scope.
 
 ## Verified fixture
 
-The media path for `YH6HJb_F-LE` has completed authenticated development checks in both forms: 1920×1080 H.264 plus AAC produced a 65,350,728-byte losslessly merged MP4, and 3840×2160 VP9 plus Premium AAC produced a 327,407,509-byte `hvc1` HEVC MP4. Both passed AVFoundation inspection. These are development fixture results, not redistributable test assets or a promise that the provider's future formats remain identical. The app-owned sign-in UI and cookie lifecycle require a fresh interactive acceptance check before the first public binary.
+The media path for `YH6HJb_F-LE` has completed authenticated development checks in both forms: 1920×1080 H.264 plus AAC produced a 65,350,728-byte losslessly merged MP4, and 3840×2160 VP9 plus Premium AAC produced a 327,407,509-byte `hvc1` HEVC MP4. Both passed AVFoundation inspection. These are development fixture results, not redistributable test assets or a promise that the provider's future formats remain identical. A separate signed-app authenticated audio save also completed through the app-owned WebKit session, appeared in Queue, and left no cookie export behind.

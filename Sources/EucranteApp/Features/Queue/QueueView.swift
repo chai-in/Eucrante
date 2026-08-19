@@ -3,6 +3,7 @@ import SwiftUI
 
 struct QueueView: View {
   @ObservedObject var model: AppModel
+  @State private var showingClearHistoryConfirmation = false
 
   var body: some View {
     Group {
@@ -36,9 +37,21 @@ struct QueueView: View {
     .toolbar {
       if !model.historyJobs.isEmpty {
         ToolbarItem {
-          Button("Clear History", role: .destructive) { model.clearHistory() }
+          Button("Clear History", role: .destructive) {
+            showingClearHistoryConfirmation = true
+          }
         }
       }
+    }
+    .confirmationDialog(
+      "Clear download history?",
+      isPresented: $showingClearHistoryConfirmation,
+      titleVisibility: .visible
+    ) {
+      Button("Clear History", role: .destructive) { model.clearHistory() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Downloaded files will stay on this Mac.")
     }
   }
 }
@@ -53,22 +66,25 @@ private struct JobRow: View {
         .frame(width: 24)
 
       VStack(alignment: .leading, spacing: 5) {
+        Text(job.filename ?? job.sourceHost)
+          .fontWeight(.medium)
+          .lineLimit(1)
+          .help(job.filename ?? job.sourceHost)
+
         HStack(spacing: 8) {
-          Text(job.filename ?? job.sourceHost)
-            .fontWeight(.medium)
-            .lineLimit(1)
           Text(job.preset.displayName)
             .font(.caption2)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(.quaternary, in: Capsule())
-        }
+            .fixedSize()
 
-        Text(detailText)
-          .font(.subheadline)
-          .foregroundStyle(job.state == .failed ? Color.red : Color.secondary)
-          .lineLimit(2)
+          Text(detailText)
+            .font(.subheadline)
+            .foregroundStyle(job.state == .failed ? Color.red : Color.secondary)
+            .lineLimit(2)
+        }
 
         if job.state.isActive, let progress = job.progress {
           ProgressView(value: progress)
@@ -79,6 +95,7 @@ private struct JobRow: View {
 
       Spacer(minLength: 12)
       actions
+        .fixedSize()
     }
     .padding(.vertical, 6)
     .contextMenu { menuActions }

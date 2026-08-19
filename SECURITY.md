@@ -26,13 +26,15 @@ Source URLs, provider output, titles, filenames, metadata, media files, WebKit c
 
 - The app opens no listening port and depends on no Eucrante server or remote job store.
 - YouTube sign-in is off by default, occurs only in Eucrante's private WebKit store, and never reads an external browser.
-- Applicable cookies are written only to a mode-`0600` job-local file, presented to the provider for acquisition, and deleted on both success and failure before staging can be retained. Startup purges an export left by forced process termination before jobs resume. Eucrante has no service that receives them and does not log them.
+- Every job staging directory and the Jobs root use mode `0700`. Applicable cookies are written only for YouTube jobs; the cookie file is created mode `0600` before any credential bytes are written, presented to the provider for acquisition, and deleted on both success and failure before staging can be retained. Startup repairs existing staging-directory permissions and purges an export left by forced process termination before jobs resume, and Sign Out cancels active YouTube saves before purging exports. Eucrante has no service that receives them and does not log them.
 - Untrusted values are passed to `Process` as argument-array elements; no shell interpolation is permitted.
 - Downloaded helper executables and FFmpeg source are pinned by version and SHA-256, verified before use, and code-signed inside the final app.
 - FFmpeg is built with network, GPL, and non-free functionality disabled. Eucrante does not bundle x264, x265, or other external codec libraries.
 - Helper paths come only from signed bundle resources, the development build directory, or explicit developer overrides.
 - Provider titles are sanitized and cannot select an output path.
 - Job staging is constrained to an opaque UUID directory under Application Support.
+- Job history is replaced atomically in the same directory and stored mode `0600`.
+- Embedded sign-in navigation is restricted to HTTPS pages on the required YouTube and Google domain suffixes; lookalike hosts are rejected.
 - A zero-byte or unreadable output is never marked complete.
 - Diagnostics omit source URLs, cookies, helper output, media, and personal output paths.
 - The app does not bypass DRM or access controls.

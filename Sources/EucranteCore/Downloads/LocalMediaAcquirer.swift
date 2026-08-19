@@ -146,7 +146,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     progress: @escaping @Sendable (LocalAcquisitionProgress) -> Void
   ) async throws -> LocalAcquisitionResult {
     guard toolsAreExecutable else { throw LocalAcquisitionError.toolsMissing }
-    try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+    try SecureCredentialFile.prepareDirectory(workingDirectory, fileManager: fileManager)
     let audioOnly = preset.isAudio || (preset == .custom && preferences.downloadMode == .audio)
     let mute = preset == .custom && preferences.downloadMode == .mute
 
@@ -342,7 +342,13 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       }
     }
 
-    guard let output = try outputFile(prefix: prefix, in: workingDirectory) else {
+    guard
+      let output = try Self.outputFile(
+        prefix: prefix,
+        in: workingDirectory,
+        fileManager: fileManager
+      )
+    else {
       throw LocalAcquisitionError.outputMissing
     }
     let values = metadata.values
@@ -363,20 +369,28 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       && fileManager.isExecutableFile(atPath: tools.ffmpeg.path)
   }
 
-  private func outputFile(prefix: String, in directory: URL) throws -> URL? {
+  static func outputFile(
+    prefix: String,
+    in directory: URL,
+    fileManager: FileManager = .default
+  ) throws -> URL? {
     try fileManager.contentsOfDirectory(
       at: directory,
-      includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+      includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
       options: [.skipsHiddenFiles]
     ).first { url in
       guard url.deletingPathExtension().lastPathComponent == prefix,
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        let values = try? url.resourceValues(
+          forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
+        )
       else { return false }
-      return values.isRegularFile == true && (values.fileSize ?? 0) > 0
+      return values.isSymbolicLink != true
+        && values.isRegularFile == true
+        && (values.fileSize ?? 0) > 0
     }
   }
 
-  private static func parseProgress(
+  static func parseProgress(
     _ line: String
   ) -> (fraction: Double?, completed: Int64?, expected: Int64?)? {
     guard line.hasPrefix("EUCRANTE_PROGRESS:") else { return nil }
@@ -391,6 +405,23 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       expected.flatMap { expected in expected > 0 ? Double(completed) / Double(expected) : nil }
     }
     return (fraction.map { min(1, max(0, $0)) }, completed, expected)
+  }
+
+  static func processError(status: Int32, diagnostic: String) -> LocalAcquisitionError {
+    let normalized = diagnostic.lowercased()
+    if normalized.contains("sign in to confirm")
+      || normalized.contains("login required")
+      || normalized.contains("cookies are no longer valid")
+    {
+      return .authenticationRequired
+    }
+    if normalized.contains("http error 403") || normalized.contains("forbidden") {
+      return .accessDenied
+    }
+    if normalized.contains("requested format is not available") {
+      return .formatUnavailable
+    }
+    return .processFailed(status)
   }
 }
 
@@ -497,20 +528,10 @@ private actor LocalProcessRunner {
       process.waitUntilExit()
       try Task.checkCancellation()
       guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-        let diagnostic = lines.joined(separator: "\n").lowercased()
-        if diagnostic.contains("sign in to confirm")
-          || diagnostic.contains("login required")
-          || diagnostic.contains("cookies are no longer valid")
-        {
-          throw LocalAcquisitionError.authenticationRequired
-        }
-        if diagnostic.contains("http error 403") || diagnostic.contains("forbidden") {
-          throw LocalAcquisitionError.accessDenied
-        }
-        if diagnostic.contains("requested format is not available") {
-          throw LocalAcquisitionError.formatUnavailable
-        }
-        throw LocalAcquisitionError.processFailed(process.terminationStatus)
+        throw LocalMediaAcquirer.processError(
+          status: process.terminationStatus,
+          diagnostic: lines.joined(separator: "\n")
+        )
       }
       return lines
     } onCancel: {

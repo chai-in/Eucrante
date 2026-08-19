@@ -3,15 +3,20 @@ import SwiftUI
 
 struct YouTubeSignInView: View {
   @ObservedObject var model: AppModel
+  @State private var showingBrowser = false
 
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
-        Text("YouTube")
+        Text(browserIsVisible ? "Sign in to YouTube" : "YouTube is ready")
           .font(.headline)
         Spacer()
-        Button("Open Passwords") { model.openPasswordsApp() }
-          .help("Open Apple Passwords, then copy and paste your Google login")
+        if browserIsVisible {
+          Button("Open Passwords") { model.openPasswordsApp() }
+            .help("Copy your Google login from Apple Passwords")
+        } else {
+          Button("Use Another Account") { showingBrowser = true }
+        }
         Button("Done") { model.finishYouTubeSignIn() }
           .keyboardShortcut(.defaultAction)
       }
@@ -19,9 +24,21 @@ struct YouTubeSignInView: View {
       .frame(height: 46)
 
       Divider()
-      YouTubeWebView()
+      if browserIsVisible {
+        YouTubeWebView()
+      } else {
+        ContentUnavailableView(
+          "Connected",
+          systemImage: "checkmark.circle.fill",
+          description: Text("YouTube Premium downloads are ready.")
+        )
+      }
     }
     .frame(minWidth: 840, minHeight: 620)
+  }
+
+  private var browserIsVisible: Bool {
+    !model.youtubeSessionReady || showingBrowser
   }
 }
 
@@ -35,7 +52,10 @@ private struct YouTubeWebView: NSViewRepresentable {
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = context.coordinator
     webView.allowsMagnification = true
-    if let url = URL(string: "https://www.youtube.com/account") {
+    if let url = URL(
+      string:
+        "https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2Faccount"
+    ) {
       webView.load(URLRequest(url: url))
     }
     return webView
@@ -52,17 +72,18 @@ private struct YouTubeWebView: NSViewRepresentable {
       guard let url = navigationAction.request.url else {
         return .cancel
       }
-      if url.scheme == "about" {
-        return .allow
-      }
-      guard url.scheme == "https", let host = url.host?.lowercased() else {
-        return .cancel
-      }
-      let allowedDomains = [
-        "youtube.com", "google.com", "gstatic.com", "googleusercontent.com", "googleapis.com",
-      ]
-      let allowed = allowedDomains.contains { host == $0 || host.hasSuffix(".\($0)") }
-      return allowed ? .allow : .cancel
+      return YouTubeNavigationPolicy.allows(url) ? .allow : .cancel
     }
+  }
+}
+
+enum YouTubeNavigationPolicy {
+  static func allows(_ url: URL) -> Bool {
+    if url.scheme == "about" { return true }
+    guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+    let allowedDomains = [
+      "youtube.com", "google.com", "gstatic.com", "googleusercontent.com", "googleapis.com",
+    ]
+    return allowedDomains.contains { host == $0 || host.hasSuffix(".\($0)") }
   }
 }

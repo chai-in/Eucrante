@@ -123,7 +123,7 @@ public actor AppleVideoTranscoder {
     }
     values.append(contentsOf: [
       "-c:v", "hevc_videotoolbox",
-      "-allow_sw", "0",
+      "-allow_sw", "1",
       "-q:v", String(quality.videoToolboxQuality),
       "-tag:v", "hvc1",
     ])

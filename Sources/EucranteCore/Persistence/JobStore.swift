@@ -33,7 +33,12 @@ public actor JobStore {
         withIntermediateDirectories: true
       )
       let data = try encoder.encode(JobLibrarySnapshot(jobs: jobs))
-      try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+      _ = try SecureCredentialFile.writeAtomically(
+        data,
+        named: fileURL.lastPathComponent,
+        to: fileURL.deletingLastPathComponent(),
+        fileManager: fileManager
+      )
     } catch {
       throw JobStoreError.write(error.localizedDescription)
     }

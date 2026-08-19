@@ -1,3 +1,4 @@
+import EucranteCore
 @preconcurrency import Foundation
 @preconcurrency import WebKit
 
@@ -43,15 +44,14 @@ final class YouTubeSessionStore {
         ].joined(separator: "\t"))
     }
 
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let url = directory.appendingPathComponent(".eucrante-youtube-cookies.txt")
-    try (lines.joined(separator: "\n") + "\n").write(
-      to: url,
-      atomically: true,
-      encoding: .utf8
+    guard let contents = String(lines.joined(separator: "\n") + "\n").data(using: .utf8) else {
+      throw YouTubeSessionError.cookieEncoding
+    }
+    return try SecureCredentialFile.write(
+      contents,
+      named: ".eucrante-youtube-cookies.txt",
+      to: directory
     )
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    return url
   }
 
   func clear() async {
@@ -78,5 +78,13 @@ final class YouTubeSessionStore {
     value.replacingOccurrences(of: "\t", with: " ")
       .replacingOccurrences(of: "\r", with: " ")
       .replacingOccurrences(of: "\n", with: " ")
+  }
+}
+
+private enum YouTubeSessionError: LocalizedError {
+  case cookieEncoding
+
+  var errorDescription: String? {
+    "Eucrante could not encode its temporary YouTube session."
   }
 }
