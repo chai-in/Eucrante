@@ -11,6 +11,7 @@
 - Signed-bundle audit, branded reproducible app icon, app/core security-boundary tests, and an enforced coverage floor.
 - Escalation-tested child-process cancellation, bounded streaming diagnostics, and synchronous atomic job-state persistence.
 - Architecture-labelled notarized-release policy with portable checksums and machine-readable provenance.
+- Deterministic app-orchestration coverage for verified completion, crash recovery, and authenticated-session cancellation, with ratcheted core/app coverage floors.
 
 ## Before the first public binary
 

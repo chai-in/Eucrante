@@ -8,7 +8,7 @@ test:
 	swift test -Xswiftc -warnings-as-errors
 
 coverage:
-	./Scripts/check-coverage.sh 47 8
+	./Scripts/check-coverage.sh 58 16
 
 build:
 	swift build --product Eucrante

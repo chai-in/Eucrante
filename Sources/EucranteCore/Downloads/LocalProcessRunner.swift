@@ -44,9 +44,102 @@ final class CancellableProcess: @unchecked Sendable {
     }
     Task.detached(priority: .utility) { [self] in
       try? await Task.sleep(for: escalationDelay)
-      guard process.isRunning else { return }
-      Darwin.kill(process.processIdentifier, SIGKILL)
+      if process.isRunning {
+        Darwin.kill(process.processIdentifier, SIGKILL)
+      }
     }
+  }
+}
+
+final class ProcessTerminationWaiter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var finished = false
+  private var continuation: CheckedContinuation<Void, Never>?
+
+  func signal() {
+    let waiting = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+      guard !finished else { return nil }
+      finished = true
+      defer { continuation = nil }
+      return continuation
+    }
+    waiting?.resume()
+  }
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      let resumeImmediately = lock.withLock { () -> Bool in
+        if finished { return true }
+        self.continuation = continuation
+        return false
+      }
+      if resumeImmediately { continuation.resume() }
+    }
+  }
+}
+
+final class ProcessLineReader: @unchecked Sendable {
+  private let ioLock = NSLock()
+  private let stateLock = NSLock()
+  private let onLine: @Sendable (String) -> Void
+  private var pending = Data()
+  private var captured: BoundedLineBuffer
+  private var closed = false
+
+  init(capacity: Int, onLine: @escaping @Sendable (String) -> Void) {
+    captured = BoundedLineBuffer(capacity: capacity)
+    self.onLine = onLine
+  }
+
+  func readAvailableData(from handle: FileHandle) {
+    ioLock.withLock {
+      guard !closed else { return }
+      let data = handle.availableData
+      if !data.isEmpty { consume(data) }
+    }
+  }
+
+  func finish(reading handle: FileHandle) -> [String] {
+    ioLock.withLock {
+      guard !closed else { return }
+      closed = true
+      let descriptor = handle.fileDescriptor
+      let flags = Darwin.fcntl(descriptor, F_GETFL)
+      if flags >= 0 {
+        _ = Darwin.fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
+      }
+      let remaining = handle.availableData
+      if !remaining.isEmpty { consume(remaining) }
+      try? handle.close()
+    }
+    var finalLine: String?
+    let lines = stateLock.withLock {
+      if !pending.isEmpty {
+        let line = String(decoding: pending, as: UTF8.self)
+        captured.append(line)
+        finalLine = line
+        pending.removeAll(keepingCapacity: false)
+      }
+      return captured.lines
+    }
+    if let finalLine { onLine(finalLine) }
+    return lines
+  }
+
+  private func consume(_ data: Data) {
+    let lines = stateLock.withLock { () -> [String] in
+      pending.append(data)
+      var values: [String] = []
+      while let newline = pending.firstIndex(of: 0x0A) {
+        var line = Data(pending[pending.startIndex..<newline])
+        pending.removeSubrange(pending.startIndex...newline)
+        if line.last == 0x0D { line.removeLast() }
+        values.append(String(decoding: line, as: UTF8.self))
+      }
+      for value in values { captured.append(value) }
+      return values
+    }
+    for line in lines { onLine(line) }
   }
 }
 
@@ -68,29 +161,35 @@ actor LocalProcessRunner {
     process.environment =
       environment
       ?? Self.restrictedEnvironment(homeDirectory: FileManager.default.temporaryDirectory)
+    let termination = ProcessTerminationWaiter()
+    let reader = ProcessLineReader(capacity: Self.maximumCapturedLines, onLine: onLine)
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+      reader.readAvailableData(from: handle)
+    }
+    process.terminationHandler = { _ in termination.signal() }
     let running = CancellableProcess(process)
 
     return try await withTaskCancellationHandler {
+      try Task.checkCancellation()
       do {
         try process.run()
       } catch {
+        pipe.fileHandleForReading.readabilityHandler = nil
+        _ = reader.finish(reading: pipe.fileHandleForReading)
         throw LocalAcquisitionError.toolsMissing
       }
-
-      var captured = BoundedLineBuffer(capacity: Self.maximumCapturedLines)
-      for try await line in pipe.fileHandleForReading.bytes.lines {
-        captured.append(line)
-        onLine(line)
-      }
-      process.waitUntilExit()
+      try? pipe.fileHandleForWriting.close()
+      await termination.wait()
+      pipe.fileHandleForReading.readabilityHandler = nil
+      let captured = reader.finish(reading: pipe.fileHandleForReading)
       try Task.checkCancellation()
       guard process.terminationReason == .exit, process.terminationStatus == 0 else {
         throw LocalMediaAcquirer.processError(
           status: process.terminationStatus,
-          diagnostic: captured.lines.joined(separator: "\n")
+          diagnostic: captured.joined(separator: "\n")
         )
       }
-      return captured.lines
+      return captured
     } onCancel: {
       running.cancel()
     }

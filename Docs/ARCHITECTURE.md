@@ -27,7 +27,7 @@ No cookies, source links, job manifests, or media files are sent to Eucrante-ope
 | Component | Responsibility |
 | --- | --- |
 | SwiftUI app | URL entry, presets, settings, consent, queue/history, user feedback |
-| `LocalMediaAcquirer` | Builds argument arrays, starts helpers without a shell, parses bounded progress, performs bounded parallel readiness checks, handles escalation-tested cancellation, and discovers output |
+| `LocalMediaAcquirer` | Builds argument arrays, starts helpers without a shell, streams bounded output independently of termination, parses progress, performs bounded parallel readiness checks, handles escalation-tested cancellation, and discovers output |
 | `yt-dlp` | Provider extraction and media transfer |
 | Deno | Local JavaScript runtime required by current YouTube extraction |
 | In-app WebKit session | Optional YouTube sign-in stored in Eucrante's private app data, independent of external browsers |

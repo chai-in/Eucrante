@@ -58,7 +58,7 @@ final class AppModel: ObservableObject {
   private let localAcquirer: any LocalMediaAcquiring
   private let mediaProcessor: LocalMediaProcessor
   private let videoTranscoder: AppleVideoTranscoder
-  private let youtubeSessionStore: YouTubeSessionStore
+  private let youtubeSessionStore: any YouTubeSessionStoring
   private let musicImporter = MusicLibraryImporter()
   private let completionNotifier = CompletionNotifier()
   private let jobStore: JobStore
@@ -75,7 +75,7 @@ final class AppModel: ObservableObject {
     localAcquirer: any LocalMediaAcquiring = LocalMediaAcquirer(),
     mediaProcessor: LocalMediaProcessor = LocalMediaProcessor(),
     videoTranscoder: AppleVideoTranscoder = AppleVideoTranscoder(),
-    youtubeSessionStore: YouTubeSessionStore = YouTubeSessionStore(),
+    youtubeSessionStore: any YouTubeSessionStoring = YouTubeSessionStore(),
     jobStore: JobStore = JobStore()
   ) {
     self.defaults = defaults

@@ -57,29 +57,38 @@ public actor AppleVideoTranscoder {
     process.standardError = processPipe
     process.environment = LocalProcessRunner.restrictedEnvironment(
       homeDirectory: workingDirectory)
+    let termination = ProcessTerminationWaiter()
+    let reader = ProcessLineReader(capacity: 100) { line in
+      if let outTime = Self.parseProgressTime(line), let duration, duration > 0 {
+        progress(min(0.99, max(0, outTime / duration)))
+      }
+    }
+    processPipe.fileHandleForReading.readabilityHandler = { handle in
+      reader.readAvailableData(from: handle)
+    }
+    process.terminationHandler = { _ in termination.signal() }
     let running = CancellableProcess(process)
 
     do {
       try await withTaskCancellationHandler {
+        try Task.checkCancellation()
         do {
           try process.run()
         } catch {
+          processPipe.fileHandleForReading.readabilityHandler = nil
+          _ = reader.finish(reading: processPipe.fileHandleForReading)
           throw AppleVideoTranscodeError.toolMissing
         }
+        try? processPipe.fileHandleForWriting.close()
         progress(0)
-        var diagnosticLines = BoundedLineBuffer(capacity: 100)
-        for try await line in processPipe.fileHandleForReading.bytes.lines {
-          if let outTime = Self.parseProgressTime(line), let duration, duration > 0 {
-            progress(min(0.99, max(0, outTime / duration)))
-          } else {
-            diagnosticLines.append(line)
-          }
-        }
-        process.waitUntilExit()
+        await termination.wait()
+        processPipe.fileHandleForReading.readabilityHandler = nil
+        let diagnosticLines = reader.finish(reading: processPipe.fileHandleForReading)
         try Task.checkCancellation()
         guard process.terminationReason == .exit, process.terminationStatus == 0 else {
           throw AppleVideoTranscodeError.failed(
-            diagnosticLines.lines.suffix(20).joined(separator: "\n")
+            diagnosticLines.filter { Self.parseProgressTime($0) == nil }.suffix(20)
+              .joined(separator: "\n")
               .trimmingCharacters(in: .whitespacesAndNewlines)
           )
         }

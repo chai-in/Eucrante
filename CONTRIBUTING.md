@@ -22,7 +22,7 @@ Run the same checks used by continuous integration:
 
 ```sh
 swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift
-./Scripts/check-coverage.sh 47 8
+./Scripts/check-coverage.sh 58 16
 swift build -Xswiftc -warnings-as-errors
 swift run EucranteCoreChecks
 make app

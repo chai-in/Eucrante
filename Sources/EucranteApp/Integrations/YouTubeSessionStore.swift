@@ -3,7 +3,14 @@ import EucranteCore
 @preconcurrency import WebKit
 
 @MainActor
-final class YouTubeSessionStore {
+protocol YouTubeSessionStoring: AnyObject {
+  func hasAuthenticatedSession() async -> Bool
+  func exportCookieFile(to directory: URL) async throws -> URL?
+  func clear() async
+}
+
+@MainActor
+final class YouTubeSessionStore: YouTubeSessionStoring {
   private let dataStore = WKWebsiteDataStore.default()
 
   func hasAuthenticatedSession() async -> Bool {

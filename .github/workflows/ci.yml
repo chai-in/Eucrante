@@ -40,7 +40,7 @@ jobs:
         run: swift build -Xswiftc -warnings-as-errors
 
       - name: Run tests with coverage floor
-        run: ./Scripts/check-coverage.sh 47 8
+        run: ./Scripts/check-coverage.sh 58 16
 
       - name: Run core integration checks
         run: swift run EucranteCoreChecks
