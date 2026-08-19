@@ -4,6 +4,46 @@ import XCTest
 @testable import EucranteCore
 
 final class EucranteCoreTests: XCTestCase {
+  func testMusicVolumeAdjustmentIsBoundedAndTargetsLibraryLevel() {
+    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -12), 0)
+    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -14.2), 29)
+    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -40), 50)
+    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: -5), -25)
+    XCTAssertEqual(AudioLevelAnalyzer.musicVolumeAdjustment(rmsDB: .nan), 0)
+  }
+
+  func testJobStoreRoundTripsRichMusicMetadataAndDecodesLegacyJobs() throws {
+    let metadata = MediaMetadata(
+      title: "Bkab (Speechless Mix)",
+      artist: "Ethan Stoller",
+      album: "Bkab (Speechless Mix)",
+      albumArtist: "Ethan Stoller",
+      year: 2008,
+      sourceID: "OANZ_nJyMtA",
+      sourceURL: URL(string: "https://www.youtube.com/watch?v=OANZ_nJyMtA"),
+      artworkURL: URL(string: "https://i.ytimg.com/vi/OANZ_nJyMtA/maxresdefault.jpg")
+    )
+    let job = PersistentJob(
+      sourceURL: URL(string: "https://www.youtube.com/watch?v=OANZ_nJyMtA")!,
+      preset: .appleMusicBest,
+      mediaMetadata: metadata
+    )
+    let restored = try JSONDecoder().decode(
+      PersistentJob.self,
+      from: JSONEncoder().encode(job)
+    )
+    XCTAssertEqual(restored.mediaMetadata, metadata)
+    XCTAssertTrue(restored.mediaMetadata?.hasMusicDetails == true)
+
+    let legacy = Data(
+      #"{"id":"938F37DB-5F94-4BD9-887C-523E933EA744","sourceURL":"https:\/\/example.com","preset":"apple-music-best","state":"completed","importedToMusic":true,"createdAt":"2026-08-19T18:01:27Z","updatedAt":"2026-08-19T18:01:46Z"}"#
+        .utf8
+    )
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    XCTAssertNil(try decoder.decode(PersistentJob.self, from: legacy).mediaMetadata)
+  }
+
   func testSourceURLValidation() throws {
     let url = try SourceURLValidator.validate("  https://example.com/watch?v=1  ")
     XCTAssertEqual(url.host, "example.com")

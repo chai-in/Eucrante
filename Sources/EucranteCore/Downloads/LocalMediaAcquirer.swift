@@ -20,14 +20,15 @@ public struct LocalToolStatus: Equatable, Sendable {
 }
 
 public enum LocalAcquisitionResult: Equatable, Sendable {
-  case single(url: URL, suggestedFilename: String)
-  case merge(video: URL, audio: URL, suggestedFilename: String)
+  case single(url: URL, suggestedFilename: String, metadata: MediaMetadata)
+  case merge(video: URL, audio: URL, suggestedFilename: String, metadata: MediaMetadata)
   case transcode(
     video: URL,
     audio: URL?,
     suggestedFilename: String,
     duration: Double?,
-    quality: AppleVideoTranscodeQuality
+    quality: AppleVideoTranscodeQuality,
+    metadata: MediaMetadata
   )
 }
 
@@ -216,7 +217,9 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
           creator: run.creator,
           sourceID: run.sourceID,
           pathExtension: run.url.pathExtension
-        ))
+        ),
+        metadata: run.metadata
+      )
     }
 
     let video = try await download(
@@ -241,7 +244,8 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
             pathExtension: "mp4"
           ),
           duration: video.duration,
-          quality: preset == .appleVideoEfficient ? .efficient : .best
+          quality: preset == .appleVideoEfficient ? .efficient : .best,
+          metadata: video.metadata
         )
       }
       return .single(
@@ -251,7 +255,9 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
           creator: video.creator,
           sourceID: video.sourceID,
           pathExtension: video.url.pathExtension
-        ))
+        ),
+        metadata: video.metadata
+      )
     }
 
     let audio = try await download(
@@ -276,13 +282,15 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
         audio: audio.url,
         suggestedFilename: filename,
         duration: video.duration,
-        quality: preset == .appleVideoEfficient ? .efficient : .best
+        quality: preset == .appleVideoEfficient ? .efficient : .best,
+        metadata: video.metadata
       )
     }
     return .merge(
       video: video.url,
       audio: audio.url,
-      suggestedFilename: filename
+      suggestedFilename: filename,
+      metadata: video.metadata
     )
   }
 
@@ -314,6 +322,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
     let sourceID: String?
     let codec: String?
     let duration: Double?
+    let metadata: MediaMetadata
 
     var requiresHEVCTranscode: Bool {
       let normalized = codec?.lowercased() ?? ""
@@ -351,11 +360,25 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       "--js-runtimes", "deno:\(tools.deno.path)",
       "--format", kind.formatSelector(videoQuality: videoQuality),
       "--output", workingDirectory.appendingPathComponent("\(prefix).%(ext)s").path,
-      "--print", "before_dl:EUCRANTE_TITLE:%(title)s",
-      "--print", "before_dl:EUCRANTE_CREATOR:%(uploader|)s",
-      "--print", "before_dl:EUCRANTE_ID:%(id)s",
-      "--print", "before_dl:EUCRANTE_VCODEC:%(vcodec|)s",
-      "--print", "before_dl:EUCRANTE_DURATION:%(duration|)s",
+      "--print", "before_dl:EUCRANTE_TITLE:%(title|)j",
+      "--print", "before_dl:EUCRANTE_TRACK:%(track|)j",
+      "--print", "before_dl:EUCRANTE_ARTIST:%(artist,creator,uploader|)j",
+      "--print", "before_dl:EUCRANTE_CREATOR:%(uploader,channel|)j",
+      "--print", "before_dl:EUCRANTE_ALBUM:%(album|)j",
+      "--print", "before_dl:EUCRANTE_ALBUM_ARTIST:%(album_artist|)j",
+      "--print", "before_dl:EUCRANTE_COMPOSER:%(composer|)j",
+      "--print", "before_dl:EUCRANTE_GENRE:%(genre|)j",
+      "--print", "before_dl:EUCRANTE_RELEASE_DATE:%(release_date,upload_date|)j",
+      "--print", "before_dl:EUCRANTE_RELEASE_YEAR:%(release_year|)j",
+      "--print", "before_dl:EUCRANTE_TRACK_NUMBER:%(track_number|)j",
+      "--print", "before_dl:EUCRANTE_TRACK_COUNT:%(track_count|)j",
+      "--print", "before_dl:EUCRANTE_DISC_NUMBER:%(disc_number|)j",
+      "--print", "before_dl:EUCRANTE_DISC_COUNT:%(disc_count|)j",
+      "--print", "before_dl:EUCRANTE_DESCRIPTION:%(description|)j",
+      "--print", "before_dl:EUCRANTE_THUMBNAIL:%(thumbnail|)j",
+      "--print", "before_dl:EUCRANTE_ID:%(id|)j",
+      "--print", "before_dl:EUCRANTE_VCODEC:%(vcodec|)j",
+      "--print", "before_dl:EUCRANTE_DURATION:%(duration|)j",
       "--progress-template",
       "download:EUCRANTE_PROGRESS:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.total_bytes_estimate)s",
     ]
@@ -373,18 +396,8 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       arguments: arguments,
       environment: environment
     ) { line in
-      if line.hasPrefix("EUCRANTE_TITLE:") {
-        metadata.setTitle(String(line.dropFirst("EUCRANTE_TITLE:".count)))
-      } else if line.hasPrefix("EUCRANTE_CREATOR:") {
-        metadata.setCreator(String(line.dropFirst("EUCRANTE_CREATOR:".count)))
-      } else if line.hasPrefix("EUCRANTE_ID:") {
-        metadata.setSourceID(String(line.dropFirst("EUCRANTE_ID:".count)))
-      } else if line.hasPrefix("EUCRANTE_VCODEC:") {
-        metadata.setCodec(String(line.dropFirst("EUCRANTE_VCODEC:".count)))
-      } else if line.hasPrefix("EUCRANTE_DURATION:") {
-        metadata.setDuration(
-          Double(String(line.dropFirst("EUCRANTE_DURATION:".count)))
-        )
+      if metadata.consume(line) {
+        return
       } else if let parsed = Self.parseProgress(line) {
         let lower = progressScale.lowerBound
         let width = progressScale.upperBound - lower
@@ -407,14 +420,35 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring {
       throw LocalAcquisitionError.outputMissing
     }
     let values = metadata.values
-    let title = FilenameSanitizer.sanitize(values.title ?? sourceURL.host() ?? "Media")
+    let displayTitle = values.track ?? values.title
+    let title = FilenameSanitizer.sanitize(displayTitle ?? sourceURL.host() ?? "Media")
+    let artist = values.artist ?? values.creator
+    let releaseYear = values.releaseYear ?? values.releaseDate.flatMap { Int($0.prefix(4)) }
+    let mediaMetadata = MediaMetadata(
+      title: displayTitle,
+      artist: artist,
+      album: values.album,
+      albumArtist: values.albumArtist ?? artist,
+      composer: values.composer,
+      genre: values.genre,
+      year: releaseYear,
+      trackNumber: values.trackNumber,
+      trackCount: values.trackCount,
+      discNumber: values.discNumber,
+      discCount: values.discCount,
+      description: values.description,
+      sourceID: values.sourceID,
+      sourceURL: sourceURL,
+      artworkURL: values.thumbnail.flatMap(URL.init(string:))
+    )
     return DownloadRun(
       url: output,
       title: title,
-      creator: values.creator,
+      creator: artist,
       sourceID: values.sourceID,
       codec: values.codec,
-      duration: values.duration
+      duration: values.duration,
+      metadata: mediaMetadata
     )
   }
 
@@ -509,24 +543,113 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
 private final class LockedMetadata: @unchecked Sendable {
   private let lock = NSLock()
   private var title: String?
+  private var track: String?
+  private var artist: String?
   private var creator: String?
+  private var album: String?
+  private var albumArtist: String?
+  private var composer: String?
+  private var genre: String?
+  private var releaseDate: String?
+  private var releaseYear: Int?
+  private var trackNumber: Int?
+  private var trackCount: Int?
+  private var discNumber: Int?
+  private var discCount: Int?
+  private var description: String?
+  private var thumbnail: String?
   private var sourceID: String?
   private var codec: String?
   private var duration: Double?
 
-  var values:
-    (
-      title: String?, creator: String?, sourceID: String?, codec: String?, duration: Double?
-    )
-  {
-    lock.withLock { (title, creator, sourceID, codec, duration) }
+  struct Values {
+    let title: String?
+    let track: String?
+    let artist: String?
+    let creator: String?
+    let album: String?
+    let albumArtist: String?
+    let composer: String?
+    let genre: String?
+    let releaseDate: String?
+    let releaseYear: Int?
+    let trackNumber: Int?
+    let trackCount: Int?
+    let discNumber: Int?
+    let discCount: Int?
+    let description: String?
+    let thumbnail: String?
+    let sourceID: String?
+    let codec: String?
+    let duration: Double?
   }
 
-  func setTitle(_ value: String) { lock.withLock { title = value } }
-  func setCreator(_ value: String) { lock.withLock { creator = value } }
-  func setSourceID(_ value: String) { lock.withLock { sourceID = value } }
-  func setCodec(_ value: String) { lock.withLock { codec = value } }
-  func setDuration(_ value: Double?) { lock.withLock { duration = value } }
+  var values: Values {
+    lock.withLock {
+      Values(
+        title: title, track: track, artist: artist, creator: creator, album: album,
+        albumArtist: albumArtist, composer: composer, genre: genre, releaseDate: releaseDate,
+        releaseYear: releaseYear, trackNumber: trackNumber, trackCount: trackCount,
+        discNumber: discNumber, discCount: discCount, description: description,
+        thumbnail: thumbnail, sourceID: sourceID, codec: codec, duration: duration
+      )
+    }
+  }
+
+  func consume(_ line: String) -> Bool {
+    let strings: [(String, (String?) -> Void)] = [
+      ("EUCRANTE_TITLE:", { self.title = $0 }),
+      ("EUCRANTE_TRACK:", { self.track = $0 }),
+      ("EUCRANTE_ARTIST:", { self.artist = $0 }),
+      ("EUCRANTE_CREATOR:", { self.creator = $0 }),
+      ("EUCRANTE_ALBUM:", { self.album = $0 }),
+      ("EUCRANTE_ALBUM_ARTIST:", { self.albumArtist = $0 }),
+      ("EUCRANTE_COMPOSER:", { self.composer = $0 }),
+      ("EUCRANTE_GENRE:", { self.genre = $0 }),
+      ("EUCRANTE_RELEASE_DATE:", { self.releaseDate = $0 }),
+      ("EUCRANTE_DESCRIPTION:", { self.description = $0 }),
+      ("EUCRANTE_THUMBNAIL:", { self.thumbnail = $0 }),
+      ("EUCRANTE_ID:", { self.sourceID = $0 }),
+      ("EUCRANTE_VCODEC:", { self.codec = $0 }),
+    ]
+    for (prefix, setter) in strings where line.hasPrefix(prefix) {
+      let value = Self.decodeString(String(line.dropFirst(prefix.count)))
+      lock.withLock { setter(value) }
+      return true
+    }
+    let integers: [(String, (Int?) -> Void)] = [
+      ("EUCRANTE_RELEASE_YEAR:", { self.releaseYear = $0 }),
+      ("EUCRANTE_TRACK_NUMBER:", { self.trackNumber = $0 }),
+      ("EUCRANTE_TRACK_COUNT:", { self.trackCount = $0 }),
+      ("EUCRANTE_DISC_NUMBER:", { self.discNumber = $0 }),
+      ("EUCRANTE_DISC_COUNT:", { self.discCount = $0 }),
+    ]
+    for (prefix, setter) in integers where line.hasPrefix(prefix) {
+      let value = Self.decodeNumber(String(line.dropFirst(prefix.count))).map(Int.init)
+      lock.withLock { setter(value) }
+      return true
+    }
+    if line.hasPrefix("EUCRANTE_DURATION:") {
+      let value = Self.decodeNumber(String(line.dropFirst("EUCRANTE_DURATION:".count)))
+      lock.withLock { duration = value }
+      return true
+    }
+    return false
+  }
+
+  private static func decodeString(_ value: String) -> String? {
+    guard let data = value.data(using: .utf8),
+      let decoded = try? JSONDecoder().decode(String.self, from: data),
+      !decoded.isEmpty
+    else { return nil }
+    return decoded
+  }
+
+  private static func decodeNumber(_ value: String) -> Double? {
+    guard let data = value.data(using: .utf8) else { return nil }
+    if let decoded = try? JSONDecoder().decode(Double.self, from: data) { return decoded }
+    return decodeString(value).flatMap(Double.init)
+  }
 }
 
 extension VideoQuality {

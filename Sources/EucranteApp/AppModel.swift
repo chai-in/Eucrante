@@ -186,15 +186,17 @@ final class AppModel: ObservableObject {
     guard let job = jobs.first(where: { $0.id == jobID }), job.preset.isAudio,
       let output = job.outputURL
     else { return }
-    do {
-      try musicImporter.importFile(at: output)
-      update(jobID) {
-        $0.importedToMusic = true
-        $0.updatedAt = .now
+    Task { @MainActor in
+      do {
+        try await musicImporter.importFile(at: output, metadata: job.mediaMetadata)
+        update(jobID) {
+          $0.importedToMusic = true
+          $0.updatedAt = .now
+        }
+        statusMessage = "Imported \(output.lastPathComponent) into Music."
+      } catch {
+        errorMessage = userMessage(for: error)
       }
-      statusMessage = "Imported \(output.lastPathComponent) into Music."
-    } catch {
-      errorMessage = userMessage(for: error)
     }
   }
 
@@ -425,9 +427,11 @@ final class AppModel: ObservableObject {
       }
       if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
       switch result {
-      case .single(let input, let filename):
+      case .single(let input, let filename, let metadata):
+        update(job.id) { $0.mediaMetadata = metadata }
         try await finalize(input, filename: filename, job: job, destination: jobDestination)
-      case .merge(let video, let audio, let filename):
+      case .merge(let video, let audio, let filename, let metadata):
+        update(job.id) { $0.mediaMetadata = metadata }
         update(job.id) {
           $0.state = .processing
           $0.progress = nil
@@ -440,7 +444,9 @@ final class AppModel: ObservableObject {
           workingDirectory: staging
         )
         try await finalize(merged, filename: filename, job: job, destination: jobDestination)
-      case .transcode(let video, let audio, let filename, let duration, let quality):
+      case .transcode(
+        let video, let audio, let filename, let duration, let quality, let metadata):
+        update(job.id) { $0.mediaMetadata = metadata }
         update(job.id) {
           $0.state = .processing
           $0.progress = 0

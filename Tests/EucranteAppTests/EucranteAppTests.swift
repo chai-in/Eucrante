@@ -5,6 +5,41 @@ import XCTest
 @testable import EucranteApp
 
 final class EucranteAppTests: XCTestCase {
+  @MainActor
+  func testMusicImportScriptSetsRichMetadataAndEscapesProviderText() throws {
+    let metadata = MediaMetadata(
+      title: "Bkab \"Speechless\"\nMix",
+      artist: "Ethan Stoller",
+      album: "Bkab (Speechless Mix)",
+      albumArtist: "Ethan Stoller",
+      composer: "Ethan Stoller",
+      genre: "Electronic",
+      year: 2008,
+      trackNumber: 1,
+      trackCount: 1,
+      description: "Provider text",
+      sourceID: "OANZ_nJyMtA",
+      sourceURL: URL(string: "https://www.youtube.com/watch?v=OANZ_nJyMtA")
+    )
+    let source = MusicLibraryImporter.scriptSource(
+      fileURL: URL(fileURLWithPath: "/tmp/Bkab.m4a"),
+      metadata: metadata,
+      artworkURL: URL(fileURLWithPath: "/tmp/cover.jpg"),
+      volumeAdjustment: 29
+    )
+
+    XCTAssertTrue(source.contains(#"set artist of importedTrack to "Ethan Stoller""#))
+    XCTAssertTrue(source.contains(#"set album of importedTrack to "Bkab (Speechless Mix)""#))
+    XCTAssertTrue(source.contains("set year of importedTrack to 2008"))
+    XCTAssertTrue(source.contains("set track number of importedTrack to 1"))
+    XCTAssertTrue(source.contains("set importedTrack's volume adjustment to 29"))
+    XCTAssertTrue(source.contains(#"Source ID: OANZ_nJyMtA"#))
+    XCTAssertTrue(source.contains(#"Bkab \"Speechless\"\nMix"#))
+    let script = try XCTUnwrap(NSAppleScript(source: source))
+    var compileError: NSDictionary?
+    XCTAssertTrue(script.compileAndReturnError(&compileError), "\(compileError ?? [:])")
+  }
+
   func testYouTubeRecognitionRejectsLookalikeHosts() throws {
     XCTAssertTrue(AppModel.isYouTube(try XCTUnwrap(URL(string: "https://youtube.com/watch?v=1"))))
     XCTAssertTrue(
@@ -267,7 +302,11 @@ private actor FixtureAcquirer: LocalMediaAcquiring {
     try makeTestTone(at: fixture)
     let size = try fixture.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init)
     progress(LocalAcquisitionProgress(fraction: 1, bytesCompleted: size, bytesExpected: size))
-    return .single(url: fixture, suggestedFilename: "Fixture.wav")
+    return .single(
+      url: fixture,
+      suggestedFilename: "Fixture.wav",
+      metadata: MediaMetadata(title: "Fixture", artist: "Eucrante Tests")
+    )
   }
 }
 

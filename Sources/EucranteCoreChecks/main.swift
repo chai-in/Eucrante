@@ -68,7 +68,7 @@ struct EucranteCoreChecks {
       workingDirectory: staging,
       progress: { _ in }
     )
-    guard case .single(let input, let filename) = acquired else {
+    guard case .single(let input, let filename, _) = acquired else {
       throw CheckFailure.failed("audio acquisition returned an unexpected result")
     }
     let processed = try await LocalMediaProcessor().process(
@@ -146,7 +146,7 @@ struct EucranteCoreChecks {
     let processor = LocalMediaProcessor()
     let processed: ProcessedMedia
     switch acquired {
-    case .merge(let video, let audio, let filename):
+    case .merge(let video, let audio, let filename, _):
       let merged = try await processor.merge(
         video: video,
         audio: audio,
@@ -159,7 +159,7 @@ struct EucranteCoreChecks {
         suggestedFilename: filename,
         destination: destination
       )
-    case .transcode(let video, let audio, let filename, let duration, let quality):
+    case .transcode(let video, let audio, let filename, let duration, let quality, _):
       let converted = try await AppleVideoTranscoder().transcode(
         video: video,
         audio: audio,
