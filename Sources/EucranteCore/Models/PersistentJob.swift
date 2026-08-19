@@ -50,6 +50,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
   public var errorMessage: String?
   public var mediaDecision: MediaDecision?
   public var mediaMetadata: MediaMetadata?
+  public var metadataOverrides: MediaMetadata?
   public var importedToMusic: Bool
   public var createdAt: Date
   public var updatedAt: Date
@@ -69,6 +70,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     errorMessage: String? = nil,
     mediaDecision: MediaDecision? = nil,
     mediaMetadata: MediaMetadata? = nil,
+    metadataOverrides: MediaMetadata? = nil,
     importedToMusic: Bool = false,
     createdAt: Date = .now,
     updatedAt: Date = .now
@@ -87,6 +89,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     self.errorMessage = errorMessage
     self.mediaDecision = mediaDecision
     self.mediaMetadata = mediaMetadata
+    self.metadataOverrides = metadataOverrides
     self.importedToMusic = importedToMusic
     self.createdAt = createdAt
     self.updatedAt = updatedAt

@@ -56,7 +56,7 @@ struct QueueView: View {
   }
 }
 
-private struct JobRow: View {
+struct JobRow: View {
   @ObservedObject var model: AppModel
   let job: PersistentJob
 

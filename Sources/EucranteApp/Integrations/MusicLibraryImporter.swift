@@ -9,7 +9,7 @@ struct MusicLibraryImporter {
       throw MusicImportError.missingFile
     }
 
-    let artwork = await temporaryArtwork(for: metadata?.artworkURL)
+    let artwork = await Self.temporaryArtwork(for: metadata?.artworkURL)
     defer {
       if let artwork {
         try? FileManager.default.removeItem(at: artwork.deletingLastPathComponent())
@@ -113,24 +113,36 @@ struct MusicLibraryImporter {
     return "\"\(escaped)\""
   }
 
-  private func temporaryArtwork(for remoteURL: URL?) async -> URL? {
-    guard let remoteURL, remoteURL.scheme?.lowercased() == "https" else { return nil }
+  static func temporaryArtwork(for remoteURL: URL?) async -> URL? {
+    guard let remoteURL else { return nil }
     do {
-      var request = URLRequest(url: remoteURL)
-      request.timeoutInterval = 15
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard data.count > 0, data.count <= 10 * 1_024 * 1_024,
-        let http = response as? HTTPURLResponse,
-        (200..<300).contains(http.statusCode),
-        let mimeType = http.mimeType?.lowercased(),
-        ["image/jpeg", "image/png"].contains(mimeType)
-      else { return nil }
+      let sourceData: Data
+      if remoteURL.isFileURL {
+        let values = try remoteURL.resourceValues(forKeys: [
+          .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey,
+        ])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+          let size = values.fileSize, size > 0, size <= ArtworkStore.maximumSourceBytes
+        else { return nil }
+        sourceData = try Data(contentsOf: remoteURL, options: .mappedIfSafe)
+      } else {
+        guard remoteURL.scheme?.lowercased() == "https" else { return nil }
+        var request = URLRequest(url: remoteURL)
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard data.count > 0, data.count <= ArtworkStore.maximumSourceBytes,
+          let http = response as? HTTPURLResponse,
+          (200..<300).contains(http.statusCode),
+          http.mimeType?.lowercased().hasPrefix("image/") == true
+        else { return nil }
+        sourceData = data
+      }
+      guard let artworkData = ArtworkNormalizer.jpegData(from: sourceData) else { return nil }
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "eucrante-artwork-\(UUID().uuidString)", isDirectory: true)
-      let fileExtension = mimeType == "image/png" ? "png" : "jpg"
       return try SecureCredentialFile.write(
-        data,
-        named: "cover.\(fileExtension)",
+        artworkData,
+        named: "cover.jpg",
         to: directory
       )
     } catch {

@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class AppModel: ObservableObject {
   @Published var sourceText = ""
+  @Published var musicMetadataDraft = MusicMetadataDraft()
   @Published var selectedPreset: EucrantePreset = .custom
   @Published var preferences: DownloadPreferences {
     didSet {
@@ -132,9 +133,32 @@ final class AppModel: ObservableObject {
     }
 
     let selected = preset ?? selectedPreset
-    let job = PersistentJob(sourceURL: sourceURL, preset: selected)
+    var metadataOverrides: MediaMetadata?
+    let jobID = UUID()
+    if selected.isAudio {
+      do {
+        metadataOverrides = try musicMetadataDraft.metadata()
+        if let selectedArtwork = metadataOverrides?.artworkURL {
+          metadataOverrides?.artworkURL = try ArtworkStore.persist(
+            selectedURL: selectedArtwork,
+            jobID: jobID
+          )
+        }
+      } catch {
+        errorMessage = userMessage(for: error)
+        return
+      }
+    }
+
+    let job = PersistentJob(
+      id: jobID,
+      sourceURL: sourceURL,
+      preset: selected,
+      metadataOverrides: metadataOverrides
+    )
     jobs.insert(job, at: 0)
     sourceText = ""
+    if selected.isAudio { musicMetadataDraft = MusicMetadataDraft() }
     persistJobs()
     drainQueue()
   }
@@ -164,6 +188,7 @@ final class AppModel: ObservableObject {
       return
     }
     removeStagingData(for: jobs[index])
+    ArtworkStore.remove(jobID: jobID)
     jobs.remove(at: index)
     persistJobs()
   }
@@ -223,6 +248,26 @@ final class AppModel: ObservableObject {
   func resetDestinationDirectory() {
     defaults.removeObject(forKey: Self.outputBookmarkKey)
     destinationDirectory = Self.defaultDestination()
+  }
+
+  func chooseMusicArtwork() {
+    let panel = NSOpenPanel()
+    panel.title = "Choose Music Artwork"
+    panel.prompt = "Choose Artwork"
+    panel.allowedContentTypes = [.image]
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let selected = panel.url else { return }
+    guard ArtworkStore.validateSelection(selected) else {
+      errorMessage = ArtworkStoreError.invalidImage.localizedDescription
+      return
+    }
+    musicMetadataDraft.artworkURL = selected
+  }
+
+  func clearMusicMetadata() {
+    musicMetadataDraft = MusicMetadataDraft()
   }
 
   func refreshLocalToolStatus() async {
@@ -309,6 +354,7 @@ final class AppModel: ObservableObject {
   func clearHistory() {
     for job in jobs where !job.state.isActive {
       removeStagingData(for: job)
+      ArtworkStore.remove(jobID: job.id)
     }
     jobs.removeAll { !$0.state.isActive }
     persistJobs()
@@ -428,10 +474,12 @@ final class AppModel: ObservableObject {
       if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
       switch result {
       case .single(let input, let filename, let metadata):
-        update(job.id) { $0.mediaMetadata = metadata }
+        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
+        update(job.id) { $0.mediaMetadata = resolvedMetadata }
         try await finalize(input, filename: filename, job: job, destination: jobDestination)
       case .merge(let video, let audio, let filename, let metadata):
-        update(job.id) { $0.mediaMetadata = metadata }
+        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
+        update(job.id) { $0.mediaMetadata = resolvedMetadata }
         update(job.id) {
           $0.state = .processing
           $0.progress = nil
@@ -446,7 +494,8 @@ final class AppModel: ObservableObject {
         try await finalize(merged, filename: filename, job: job, destination: jobDestination)
       case .transcode(
         let video, let audio, let filename, let duration, let quality, let metadata):
-        update(job.id) { $0.mediaMetadata = metadata }
+        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
+        update(job.id) { $0.mediaMetadata = resolvedMetadata }
         update(job.id) {
           $0.state = .processing
           $0.progress = 0
@@ -547,6 +596,22 @@ final class AppModel: ObservableObject {
     }
 
     try await retainAndComplete(output, jobID: job.id)
+  }
+
+  private func resolvedMetadata(
+    _ providerMetadata: MediaMetadata,
+    for job: PersistentJob
+  ) async -> MediaMetadata {
+    var metadata = providerMetadata.applyingUserOverrides(job.metadataOverrides)
+    guard job.preset.isAudio, job.metadataOverrides?.artworkURL == nil,
+      let providerArtwork = metadata.artworkURL,
+      let cachedArtwork = await ArtworkStore.cacheProviderArtwork(
+        from: providerArtwork,
+        jobID: job.id
+      )
+    else { return metadata }
+    metadata.artworkURL = cachedArtwork
+    return metadata
   }
 
   private func retainAndComplete(_ output: URL, jobID: UUID) async throws {

@@ -26,7 +26,7 @@ Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain. `make ap
 
 ```sh
 swift test -Xswiftc -warnings-as-errors
-./Scripts/check-coverage.sh 58 16
+./Scripts/check-coverage.sh 92 83
 swift run EucranteCoreChecks
 make app
 ```

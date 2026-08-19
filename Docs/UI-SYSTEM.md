@@ -7,6 +7,7 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 - One prominent link field.
 - Four equally weighted one-click Apple output buttons.
 - Preset names stand on their own; do not add explanatory subtitles to the main action grid.
+- Keep the optional Music metadata editor collapsed beneath the preset grid. It may override title, artist, album, album artist, composer, genre, year, track, disc, and artwork without making one-click saves wait for a separate screen.
 - Custom controls remain collapsed until requested.
 - The output folder is always visible.
 - Starting an output reveals a persistent bottom shelf with the active preset, phase, progress, Queue, and Cancel controls; completion leaves a concise saved-file confirmation.

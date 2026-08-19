@@ -3,8 +3,8 @@
 set -euo pipefail
 
 project_root="${0:A:h:h}"
-core_minimum_percent="${1:-58}"
-app_minimum_percent="${2:-16}"
+core_minimum_percent="${1:-92}"
+app_minimum_percent="${2:-83}"
 
 command -v jq >/dev/null 2>&1 || {
   echo "Coverage verification requires jq." >&2

@@ -1,3 +1,4 @@
+import AppKit
 import EucranteCore
 import SwiftUI
 
@@ -5,6 +6,7 @@ struct SaveView: View {
   @ObservedObject var model: AppModel
   @FocusState private var sourceFocused: Bool
   @State private var customExpanded = false
+  @State private var metadataExpanded = false
 
   private let presetColumns = [
     GridItem(.flexible(), spacing: 10),
@@ -23,6 +25,8 @@ struct SaveView: View {
             presetButton(.appleVideoBest, icon: "film")
             presetButton(.appleVideoEfficient, icon: "rectangle.compress.vertical")
           }
+
+          musicMetadataEditor
 
           Divider()
 
@@ -82,6 +86,89 @@ struct SaveView: View {
     }
     .onAppear { sourceFocused = true }
     .onChange(of: model.focusRequestID) { sourceFocused = true }
+  }
+
+  private var musicMetadataEditor: some View {
+    DisclosureGroup(isExpanded: $metadataExpanded) {
+      VStack(spacing: 10) {
+        metadataField("Title", text: $model.musicMetadataDraft.title)
+        metadataField("Artist", text: $model.musicMetadataDraft.artist)
+        metadataField("Album", text: $model.musicMetadataDraft.album)
+        metadataField("Album Artist", text: $model.musicMetadataDraft.albumArtist)
+        metadataField("Composer", text: $model.musicMetadataDraft.composer)
+        metadataField("Genre", text: $model.musicMetadataDraft.genre)
+
+        HStack(spacing: 12) {
+          compactMetadataField("Year", text: $model.musicMetadataDraft.year)
+          compactMetadataField("Track", text: $model.musicMetadataDraft.trackNumber)
+          compactMetadataField("Disc", text: $model.musicMetadataDraft.discNumber)
+        }
+
+        HStack(spacing: 10) {
+          if let url = model.musicMetadataDraft.artworkURL,
+            let image = NSImage(contentsOf: url)
+          {
+            Image(nsImage: image)
+              .resizable()
+              .scaledToFill()
+              .frame(width: 44, height: 44)
+              .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+              .accessibilityLabel("Selected artwork")
+          } else {
+            Image(systemName: "photo")
+              .font(.title3)
+              .foregroundStyle(.secondary)
+              .frame(width: 44, height: 44)
+              .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+              .accessibilityHidden(true)
+          }
+
+          Text("Artwork")
+            .foregroundStyle(.secondary)
+          Spacer()
+          Button("Choose…") { model.chooseMusicArtwork() }
+          if model.musicMetadataDraft.artworkURL != nil {
+            Button {
+              model.musicMetadataDraft.artworkURL = nil
+            } label: {
+              Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Remove selected artwork")
+          }
+        }
+
+        if !model.musicMetadataDraft.isEmpty {
+          HStack {
+            Spacer()
+            Button("Clear Metadata") { model.clearMusicMetadata() }
+              .buttonStyle(.link)
+          }
+        }
+      }
+      .padding(.top, 12)
+    } label: {
+      Label("Music metadata", systemImage: "music.note.list")
+    }
+  }
+
+  private func metadataField(_ label: String, text: Binding<String>) -> some View {
+    LabeledContent(label) {
+      TextField("Automatic", text: text)
+        .textFieldStyle(.roundedBorder)
+        .frame(maxWidth: 380)
+    }
+  }
+
+  private func compactMetadataField(_ label: String, text: Binding<String>) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(label)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      TextField("Auto", text: text)
+        .textFieldStyle(.roundedBorder)
+    }
   }
 
   private var sourceField: some View {

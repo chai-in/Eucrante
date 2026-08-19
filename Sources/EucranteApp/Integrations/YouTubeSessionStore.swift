@@ -11,7 +11,11 @@ protocol YouTubeSessionStoring: AnyObject {
 
 @MainActor
 final class YouTubeSessionStore: YouTubeSessionStoring {
-  private let dataStore = WKWebsiteDataStore.default()
+  private let dataStore: WKWebsiteDataStore
+
+  init(dataStore: WKWebsiteDataStore = .default()) {
+    self.dataStore = dataStore
+  }
 
   func hasAuthenticatedSession() async -> Bool {
     let authenticatedNames: Set<String> = [

@@ -56,4 +56,30 @@ public struct MediaMetadata: Codable, Equatable, Sendable {
       .contains { $0?.isEmpty == false }
       || year != nil || trackNumber != nil || discNumber != nil || artworkURL != nil
   }
+
+  public func applyingUserOverrides(_ overrides: MediaMetadata?) -> MediaMetadata {
+    guard let overrides else { return self }
+    var result = self
+
+    func preferred(_ override: String?, fallback: String?) -> String? {
+      guard let value = override?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !value.isEmpty
+      else { return fallback }
+      return value
+    }
+
+    result.title = preferred(overrides.title, fallback: title)
+    result.artist = preferred(overrides.artist, fallback: artist)
+    result.album = preferred(overrides.album, fallback: album)
+    result.albumArtist = preferred(overrides.albumArtist, fallback: albumArtist)
+    result.composer = preferred(overrides.composer, fallback: composer)
+    result.genre = preferred(overrides.genre, fallback: genre)
+    result.year = overrides.year ?? year
+    result.trackNumber = overrides.trackNumber ?? trackNumber
+    result.trackCount = overrides.trackCount ?? trackCount
+    result.discNumber = overrides.discNumber ?? discNumber
+    result.discCount = overrides.discCount ?? discCount
+    result.artworkURL = overrides.artworkURL ?? artworkURL
+    return result
+  }
 }

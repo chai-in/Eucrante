@@ -159,7 +159,7 @@ public actor LocalMediaProcessor: MediaProcessing {
 
     try Task.checkCancellation()
     let source = try await inspect(input)
-    let decision = decision(for: input, preset: preset, info: source)
+    let decision = Self.decision(for: input, preset: preset, info: source)
     try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
     progress(0)
 
@@ -201,7 +201,7 @@ public actor LocalMediaProcessor: MediaProcessing {
         progress: progress
       )
     case .transcodeHEVC:
-      let exportPreset = hevcPreset(for: source)
+      let exportPreset = Self.hevcPreset(for: source)
       outputURL = try await export(
         input,
         presetName: exportPreset,
@@ -214,7 +214,7 @@ public actor LocalMediaProcessor: MediaProcessing {
 
     try Task.checkCancellation()
     let output = try await inspect(outputURL)
-    try verify(source: source, output: output, preset: preset, decision: decision)
+    try Self.verify(source: source, output: output, preset: preset, decision: decision)
     progress(1)
     return ProcessedMedia(url: outputURL, decision: decision, source: source, output: output)
   }
@@ -269,7 +269,7 @@ public actor LocalMediaProcessor: MediaProcessing {
     )
   }
 
-  private func decision(
+  static func decision(
     for input: URL,
     preset: EucrantePreset,
     info: MediaFileInfo
@@ -506,7 +506,7 @@ public actor LocalMediaProcessor: MediaProcessing {
     }
   }
 
-  private func verify(
+  static func verify(
     source: MediaFileInfo,
     output: MediaFileInfo,
     preset: EucrantePreset,
@@ -544,14 +544,14 @@ public actor LocalMediaProcessor: MediaProcessing {
     }
   }
 
-  private func hevcPreset(for info: MediaFileInfo) -> String {
+  static func hevcPreset(for info: MediaFileInfo) -> String {
     let maxDimension = max(info.width ?? 0, info.height ?? 0)
     if maxDimension <= 1_920 { return AVAssetExportPresetHEVC1920x1080 }
     if maxDimension <= 3_840 { return AVAssetExportPresetHEVC3840x2160 }
     return AVAssetExportPresetHEVCHighestQuality
   }
 
-  private func efficientVideoBitrate(_ info: MediaFileInfo) -> Double {
+  static func efficientVideoBitrate(_ info: MediaFileInfo) -> Double {
     let width = Double(info.width ?? 1_920)
     let height = Double(info.height ?? 1_080)
     let fps = max(24, min(info.frameRate ?? 30, 60))
@@ -559,7 +559,7 @@ public actor LocalMediaProcessor: MediaProcessing {
     return min(28_000_000, max(1_600_000, width * height * fps * bitsPerPixelFrame))
   }
 
-  private func isLossless(_ codec: String?) -> Bool {
+  static func isLossless(_ codec: String?) -> Bool {
     guard let codec else { return false }
     return ["alac", "flac", "lpcm", "pcm ", "ape ", "wav "].contains(codec)
   }

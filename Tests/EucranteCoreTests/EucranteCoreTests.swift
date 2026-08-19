@@ -4,6 +4,64 @@ import XCTest
 @testable import EucranteCore
 
 final class EucranteCoreTests: XCTestCase {
+  func testPresetDecisionAndJobStateLabelsCoverEveryPublicCase() throws {
+    let presetNames: [EucrantePreset: String] = [
+      .appleMusicBest: "Music — Best",
+      .appleMusicEfficient: "Music — Efficient",
+      .appleVideoBest: "Video — Best",
+      .appleVideoEfficient: "Video — Efficient",
+      .custom: "Custom",
+    ]
+    for preset in EucrantePreset.allCases {
+      XCTAssertEqual(preset.displayName, presetNames[preset])
+      XCTAssertEqual(preset.id, preset)
+      XCTAssertEqual(
+        preset.isAudio,
+        preset == .appleMusicBest || preset == .appleMusicEfficient
+      )
+      XCTAssertEqual(preset.requiresLocalVerification, preset != .custom)
+    }
+
+    let decisions: [MediaDecision: String] = [
+      .passthrough: "Preserved original",
+      .remux: "Remuxed without quality loss",
+      .transcodeAAC: "Converted to AAC",
+      .transcodeALAC: "Converted to Apple Lossless",
+      .transcodeHEVC: "Converted to HEVC",
+    ]
+    for decision in MediaDecision.allCases {
+      XCTAssertEqual(decision.displayName, decisions[decision])
+    }
+
+    let stateNames: [PersistentJob.State: String] = [
+      .queued: "Queued",
+      .resolving: "Preparing",
+      .awaitingSelection: "Choose an item",
+      .downloading: "Downloading",
+      .processing: "Optimizing for Apple devices",
+      .verifying: "Checking the finished file",
+      .uploading: "Finishing",
+      .completed: "Completed",
+      .failed: "Failed",
+      .cancelled: "Cancelled",
+    ]
+    for state in PersistentJob.State.allCases {
+      XCTAssertEqual(state.displayName, stateNames[state])
+      XCTAssertEqual(
+        state.isActive,
+        [.queued, .resolving, .downloading, .processing, .verifying, .uploading].contains(
+          state)
+      )
+    }
+
+    let job = PersistentJob(
+      sourceURL: try XCTUnwrap(URL(string: "https://media.example/song")),
+      preset: .appleMusicBest
+    )
+    XCTAssertEqual(job.sourceHost, "media.example")
+    XCTAssertNil(job.outputURL)
+  }
+
   func testJobStoreRoundTripsRichMusicMetadataAndDecodesLegacyJobs() throws {
     let metadata = MediaMetadata(
       title: "Bkab (Speechless Mix)",
@@ -18,13 +76,15 @@ final class EucranteCoreTests: XCTestCase {
     let job = PersistentJob(
       sourceURL: URL(string: "https://www.youtube.com/watch?v=OANZ_nJyMtA")!,
       preset: .appleMusicBest,
-      mediaMetadata: metadata
+      mediaMetadata: metadata,
+      metadataOverrides: MediaMetadata(title: "My title")
     )
     let restored = try JSONDecoder().decode(
       PersistentJob.self,
       from: JSONEncoder().encode(job)
     )
     XCTAssertEqual(restored.mediaMetadata, metadata)
+    XCTAssertEqual(restored.metadataOverrides?.title, "My title")
     XCTAssertTrue(restored.mediaMetadata?.hasMusicDetails == true)
 
     let legacy = Data(
@@ -34,15 +94,96 @@ final class EucranteCoreTests: XCTestCase {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     XCTAssertNil(try decoder.decode(PersistentJob.self, from: legacy).mediaMetadata)
+    XCTAssertNil(try decoder.decode(PersistentJob.self, from: legacy).metadataOverrides)
+  }
+
+  func testManualMusicMetadataOverridesProviderFieldsAndPreservesSourceDetails() {
+    let provider = MediaMetadata(
+      title: "Provider Title",
+      artist: "Provider Artist",
+      album: "Provider Album",
+      genre: "Electronic",
+      year: 2020,
+      description: "Provider description",
+      sourceID: "provider-id",
+      sourceURL: URL(string: "https://example.com/watch"),
+      artworkURL: URL(string: "https://example.com/thumbnail.webp")
+    )
+    let overrides = MediaMetadata(
+      title: "  My Title  ",
+      artist: "My Artist",
+      year: 2026,
+      trackNumber: 3,
+      artworkURL: URL(fileURLWithPath: "/tmp/manual-cover.jpg")
+    )
+
+    let merged = provider.applyingUserOverrides(overrides)
+
+    XCTAssertEqual(merged.title, "My Title")
+    XCTAssertEqual(merged.artist, "My Artist")
+    XCTAssertEqual(merged.album, "Provider Album")
+    XCTAssertEqual(merged.genre, "Electronic")
+    XCTAssertEqual(merged.year, 2026)
+    XCTAssertEqual(merged.trackNumber, 3)
+    XCTAssertEqual(merged.sourceID, "provider-id")
+    XCTAssertEqual(merged.description, "Provider description")
+    XCTAssertEqual(merged.artworkURL?.path, "/tmp/manual-cover.jpg")
   }
 
   func testSourceURLValidation() throws {
     let url = try SourceURLValidator.validate("  https://example.com/watch?v=1  ")
     XCTAssertEqual(url.host, "example.com")
+    XCTAssertThrowsError(try SourceURLValidator.validate(""))
     XCTAssertThrowsError(try SourceURLValidator.validate("file:///tmp/video.mp4"))
     XCTAssertThrowsError(try SourceURLValidator.validate("example.com/video"))
     XCTAssertThrowsError(try SourceURLValidator.validate("https://user:secret@example.com/video"))
     XCTAssertThrowsError(try SourceURLValidator.validate(String(repeating: "a", count: 8_193)))
+    XCTAssertEqual(
+      SourceURLValidationError.empty.errorDescription, "Paste a public media link first.")
+    XCTAssertEqual(
+      SourceURLValidationError.invalid.errorDescription, "Enter a complete HTTP or HTTPS link.")
+    XCTAssertEqual(
+      SourceURLValidationError.tooLong.errorDescription, "This link is too long to process safely.")
+  }
+
+  func testPersistenceErrorDescriptionsAndInvalidBookmarkData() throws {
+    XCTAssertThrowsError(try OutputFolderBookmark.resolve(Data()))
+    XCTAssertEqual(
+      OutputFolderError.create("details").errorDescription,
+      "Eucrante could not remember the selected output folder."
+    )
+    XCTAssertEqual(
+      OutputFolderError.resolve("details").errorDescription,
+      "The selected output folder is no longer available. Choose it again."
+    )
+    XCTAssertEqual(
+      SecureCredentialFileError.invalidFilename.errorDescription,
+      "The temporary credential filename was invalid."
+    )
+    XCTAssertEqual(
+      SecureCredentialFileError.create.errorDescription,
+      "Eucrante could not create its protected temporary credential file."
+    )
+    XCTAssertEqual(
+      SecureCredentialFileError.fileSystem("details").errorDescription,
+      "Eucrante could not protect its temporary credential file."
+    )
+  }
+
+  func testSecureCredentialWriteReplacesExistingFileAndRejectsFileAsDirectory() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "EucranteCredentialBranches-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let first = try SecureCredentialFile.write(Data("first".utf8), named: "secret", to: root)
+    let second = try SecureCredentialFile.write(Data("second".utf8), named: "secret", to: root)
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(try Data(contentsOf: second), Data("second".utf8))
+
+    let blockingFile = root.appendingPathComponent("not-a-directory")
+    try Data("file".utf8).write(to: blockingFile)
+    XCTAssertThrowsError(
+      try SecureCredentialFile.write(Data("x".utf8), named: "secret", to: blockingFile)
+    )
   }
 
   func testFilenameSanitizerRemovesTraversalAndControlCharacters() {
@@ -149,6 +290,253 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertEqual(parsed ?? 0, 1.25, accuracy: 0.0001)
     XCTAssertNil(AppleVideoTranscoder.parseProgressTime("progress=continue"))
     XCTAssertEqual(AppleVideoTranscoder.parseProgressTime("out_time_ms=2500000") ?? 0, 2.5)
+    XCTAssertNil(AppleVideoTranscoder.parseProgressTime("out_time_us=invalid"))
+    XCTAssertNil(AppleVideoTranscoder.parseProgressTime("out_time_ms=invalid"))
+  }
+
+  func testAppleVideoTranscoderSuccessFailureAndMissingOutput() async throws {
+    let root = temporaryDirectory("EucranteTranscoderTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let video = root.appendingPathComponent("video.webm")
+    let audio = root.appendingPathComponent("audio.m4a")
+    try Data("video".utf8).write(to: video)
+    try Data("audio".utf8).write(to: audio)
+    let success = try executableScript(
+      """
+      #!/bin/sh
+      for last do :; done
+      printf 'out_time_us=500000\n'
+      printf 'out_time_ms=1500000\n'
+      printf 'done' > "$last"
+      """,
+      named: "success-ffmpeg",
+      in: root
+    )
+    let progress = LockedProgressRecorder()
+    let output = try await AppleVideoTranscoder(executable: success).transcode(
+      video: video,
+      audio: audio,
+      duration: 2,
+      quality: .efficient,
+      workingDirectory: root.appendingPathComponent("success", isDirectory: true),
+      progress: { progress.append($0) }
+    )
+    XCTAssertEqual(try Data(contentsOf: output), Data("done".utf8))
+    XCTAssertEqual(progress.values.first, 0)
+    XCTAssertEqual(progress.values.last, 1)
+    XCTAssertTrue(progress.values.contains { abs($0 - 0.25) < 0.001 })
+    XCTAssertTrue(progress.values.contains { abs($0 - 0.75) < 0.001 })
+
+    let failure = try executableScript(
+      "#!/bin/sh\nprintf 'provider diagnostic\\n'\nexit 7\n",
+      named: "failed-ffmpeg",
+      in: root
+    )
+    do {
+      _ = try await AppleVideoTranscoder(executable: failure).transcode(
+        video: video,
+        audio: nil,
+        duration: nil,
+        quality: .best,
+        workingDirectory: root.appendingPathComponent("failure", isDirectory: true)
+      )
+      XCTFail("Expected converter failure")
+    } catch let error as AppleVideoTranscodeError {
+      XCTAssertEqual(error, .failed("provider diagnostic"))
+    }
+
+    let noOutput = try executableScript(
+      "#!/bin/sh\nexit 0\n",
+      named: "empty-ffmpeg",
+      in: root
+    )
+    await xctAssertThrowsErrorAsync(
+      try await AppleVideoTranscoder(executable: noOutput).transcode(
+        video: video,
+        audio: nil,
+        duration: nil,
+        quality: .best,
+        workingDirectory: root.appendingPathComponent("empty", isDirectory: true)
+      )
+    ) { error in
+      XCTAssertEqual(error as? AppleVideoTranscodeError, .outputMissing)
+    }
+
+    await xctAssertThrowsErrorAsync(
+      try await AppleVideoTranscoder(
+        executable: root.appendingPathComponent("missing-ffmpeg")
+      ).transcode(
+        video: video,
+        audio: nil,
+        duration: nil,
+        quality: .best,
+        workingDirectory: root.appendingPathComponent("missing", isDirectory: true)
+      )
+    ) { error in
+      XCTAssertEqual(error as? AppleVideoTranscodeError, .toolMissing)
+    }
+  }
+
+  func testLocalAcquirerRunsAudioMergeMuteAndTranscodeBranches() async throws {
+    let root = temporaryDirectory("EucranteAcquirerTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let appleScript = try downloaderScript(codec: "avc1", in: root, name: "apple-downloader")
+    let wideScript = try downloaderScript(codec: "vp9", in: root, name: "wide-downloader")
+    let source = try XCTUnwrap(URL(string: "https://example.com/watch?id=fixture"))
+    let cookie = root.appendingPathComponent("cookies.txt")
+    try Data("cookie".utf8).write(to: cookie)
+
+    let audioProgress = LockedProgressRecorder()
+    let audioResult = try await acquirer(downloader: appleScript).acquire(
+      sourceURL: source,
+      preset: .appleMusicEfficient,
+      preferences: DownloadPreferences(filenameStyle: .pretty),
+      cookieFile: cookie,
+      workingDirectory: root.appendingPathComponent("audio-job", isDirectory: true),
+      progress: { audioProgress.append($0.fraction ?? -1) }
+    )
+    guard case .single(let audioURL, let audioName, let audioMetadata) = audioResult else {
+      return XCTFail("Expected audio result")
+    }
+    XCTAssertEqual(audioURL.pathExtension, "m4a")
+    XCTAssertEqual(audioName, "Track Name • Test Artist.m4a")
+    XCTAssertEqual(audioMetadata.album, "Test Album")
+    XCTAssertEqual(audioMetadata.albumArtist, "Album Artist")
+    XCTAssertEqual(audioMetadata.composer, "Composer")
+    XCTAssertEqual(audioMetadata.genre, "Electronic")
+    XCTAssertEqual(audioMetadata.year, 2024)
+    XCTAssertEqual(audioMetadata.trackNumber, 2)
+    XCTAssertEqual(audioMetadata.trackCount, 9)
+    XCTAssertEqual(audioMetadata.discNumber, 1)
+    XCTAssertEqual(audioMetadata.discCount, 2)
+    XCTAssertEqual(audioMetadata.sourceID, "fixture-id")
+    XCTAssertEqual(audioMetadata.artworkURL?.absoluteString, "https://example.com/cover.webp")
+    XCTAssertTrue(audioProgress.values.contains(0.5))
+    XCTAssertTrue(audioProgress.values.contains(1))
+
+    let mergeResult = try await acquirer(downloader: appleScript).acquire(
+      sourceURL: source,
+      preset: .appleVideoBest,
+      preferences: DownloadPreferences(filenameStyle: .basic),
+      cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("merge-job", isDirectory: true),
+      progress: { _ in }
+    )
+    guard case .merge(let video, let audio, let name, _) = mergeResult else {
+      return XCTFail("Expected merge result")
+    }
+    XCTAssertEqual(video.lastPathComponent, "video.mp4")
+    XCTAssertEqual(audio.lastPathComponent, "audio.m4a")
+    XCTAssertEqual(name, "Track Name.mp4")
+
+    var mutePreferences = DownloadPreferences()
+    mutePreferences.downloadMode = .mute
+    let muteResult = try await acquirer(downloader: appleScript).acquire(
+      sourceURL: source,
+      preset: .custom,
+      preferences: mutePreferences,
+      cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("mute-job", isDirectory: true),
+      progress: { _ in }
+    )
+    guard case .single(let muteURL, _, _) = muteResult else {
+      return XCTFail("Expected mute passthrough")
+    }
+    XCTAssertEqual(muteURL.lastPathComponent, "video.mp4")
+
+    let transcodeResult = try await acquirer(downloader: wideScript).acquire(
+      sourceURL: source,
+      preset: .appleVideoEfficient,
+      preferences: DownloadPreferences(filenameStyle: .nerdy),
+      cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("transcode-job", isDirectory: true),
+      progress: { _ in }
+    )
+    guard
+      case .transcode(let wideVideo, let wideAudio, let wideName, let duration, let quality, _) =
+        transcodeResult
+    else { return XCTFail("Expected HEVC transcode") }
+    XCTAssertEqual(wideVideo.lastPathComponent, "video.mp4")
+    XCTAssertEqual(wideAudio?.lastPathComponent, "audio.m4a")
+    XCTAssertEqual(wideName, "Track Name [fixture-id].mp4")
+    XCTAssertEqual(duration, 123.5)
+    XCTAssertEqual(quality, .efficient)
+
+    let muteTranscode = try await acquirer(downloader: wideScript).acquire(
+      sourceURL: source,
+      preset: .custom,
+      preferences: mutePreferences,
+      cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("mute-transcode-job", isDirectory: true),
+      progress: { _ in }
+    )
+    guard case .transcode(_, let absentAudio, _, _, let bestQuality, _) = muteTranscode else {
+      return XCTFail("Expected mute HEVC transcode")
+    }
+    XCTAssertNil(absentAudio)
+    XCTAssertEqual(bestQuality, .best)
+  }
+
+  func testLocalAcquirerToolDiscoveryStatusAndFailurePaths() async throws {
+    let root = temporaryDirectory("EucranteAcquirerFailureTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let version = try executableScript(
+      "#!/bin/sh\nprintf 'tool 1.0\\n'\n",
+      named: "version-tool",
+      in: root
+    )
+    let discovered = LocalMediaAcquirer.ToolPaths.discover(
+      environment: [
+        "EUCRANTE_YTDLP_PATH": version.path,
+        "EUCRANTE_DENO_PATH": version.path,
+        "EUCRANTE_FFMPEG_PATH": version.path,
+      ],
+      currentDirectory: root
+    )
+    XCTAssertEqual(discovered.ytDLP, version)
+    let ready = await LocalMediaAcquirer(tools: discovered).toolStatus()
+    XCTAssertTrue(ready.ready)
+    XCTAssertEqual(ready.downloaderVersion, "tool 1.0")
+    XCTAssertEqual(ready.runtimeVersion, "tool 1.0")
+    XCTAssertEqual(ready.transcoderVersion, "tool 1.0")
+
+    let missing = LocalMediaAcquirer.ToolPaths(
+      ytDLP: root.appendingPathComponent("missing"), deno: version, ffmpeg: version)
+    let missingStatus = await LocalMediaAcquirer(tools: missing).toolStatus()
+    XCTAssertFalse(missingStatus.ready)
+    await xctAssertThrowsErrorAsync(
+      try await LocalMediaAcquirer(tools: missing).acquire(
+        sourceURL: URL(string: "https://example.com")!,
+        preset: .appleMusicBest,
+        preferences: DownloadPreferences(),
+        cookieFile: nil,
+        workingDirectory: root.appendingPathComponent("missing-job"),
+        progress: { _ in }
+      )
+    ) { error in
+      XCTAssertEqual(error as? LocalAcquisitionError, .toolsMissing)
+    }
+
+    let noOutput = try executableScript(
+      "#!/bin/sh\nprintf 'EUCRANTE_TITLE:\"No Output\"\\n'\n",
+      named: "no-output",
+      in: root
+    )
+    await xctAssertThrowsErrorAsync(
+      try await acquirer(downloader: noOutput).acquire(
+        sourceURL: URL(string: "https://example.com")!,
+        preset: .appleMusicBest,
+        preferences: DownloadPreferences(),
+        cookieFile: nil,
+        workingDirectory: root.appendingPathComponent("empty-job"),
+        progress: { _ in }
+      )
+    ) { error in
+      XCTAssertEqual(error as? LocalAcquisitionError, .outputMissing)
+    }
   }
 
   func testDownloaderProgressParsingUsesExactOrEstimatedTotal() throws {
@@ -523,6 +911,258 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertGreaterThan(processed.output.fileSize, 0)
   }
 
+  func testMediaProcessorInspectsCopiesVideoProcessesAndMerges() async throws {
+    let root = temporaryDirectory("EucranteMediaBranchTests")
+    let inputDirectory = root.appendingPathComponent("input", isDirectory: true)
+    let outputDirectory = root.appendingPathComponent("output", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let tone = inputDirectory.appendingPathComponent("tone.wav")
+    let video = inputDirectory.appendingPathComponent("video.mp4")
+    try makeTone(at: tone)
+    try await makeVideo(at: video)
+    let processor = LocalMediaProcessor()
+
+    let audioInfo = try await processor.inspect(tone)
+    XCTAssertNotNil(audioInfo.audioCodec)
+    XCTAssertNil(audioInfo.videoCodec)
+    XCTAssertEqual(audioInfo.channelCount, 2)
+    XCTAssertGreaterThan(audioInfo.duration, 0)
+
+    let customProgress = LockedProgressRecorder()
+    let custom = try await processor.process(
+      tone,
+      preset: .custom,
+      suggestedFilename: nil,
+      destination: outputDirectory,
+      progress: { customProgress.append($0) }
+    )
+    XCTAssertEqual(custom.decision, .passthrough)
+    XCTAssertEqual(custom.url.lastPathComponent, "tone.wav")
+    XCTAssertTrue(customProgress.values.isEmpty)
+
+    let best = try await processor.process(
+      tone,
+      preset: .appleMusicBest,
+      suggestedFilename: "Best Tone.wav",
+      destination: outputDirectory,
+      progress: { customProgress.append($0) }
+    )
+    XCTAssertEqual(best.decision, .passthrough)
+    XCTAssertEqual(best.url.lastPathComponent, "Best Tone.wav")
+    XCTAssertTrue(customProgress.values.contains(0))
+    XCTAssertEqual(customProgress.values.last, 1)
+
+    let videoInfo = try await processor.inspect(video)
+    XCTAssertNotNil(videoInfo.videoCodec)
+    XCTAssertEqual(videoInfo.width, 64)
+    XCTAssertEqual(videoInfo.height, 64)
+    XCTAssertFalse(videoInfo.isHDR)
+    let videoBest = try await processor.process(
+      video,
+      preset: .appleVideoBest,
+      suggestedFilename: "Video.mp4",
+      destination: outputDirectory
+    )
+    XCTAssertEqual(videoBest.decision, .passthrough)
+    XCTAssertNotNil(videoBest.output.videoCodec)
+
+    let merged = try await processor.merge(
+      video: video,
+      audio: tone,
+      filename: "Merged.webm",
+      workingDirectory: outputDirectory
+    )
+    XCTAssertEqual(merged.lastPathComponent, "Merged.mp4")
+    let mergedInfo = try await processor.inspect(merged)
+    XCTAssertNotNil(mergedInfo.videoCodec)
+    XCTAssertNotNil(mergedInfo.audioCodec)
+
+    await xctAssertThrowsErrorAsync(
+      try await processor.merge(
+        video: tone,
+        audio: tone,
+        filename: "Invalid.mp4",
+        workingDirectory: outputDirectory
+      )
+    ) { error in
+      XCTAssertEqual(error as? MediaProcessingError, .missingInput)
+    }
+  }
+
+  func testMediaProcessorALACAndHEVCConversionBranches() async throws {
+    let root = temporaryDirectory("EucranteMediaConversionTests")
+    let input = root.appendingPathComponent("input", isDirectory: true)
+    let output = root.appendingPathComponent("output", isDirectory: true)
+    try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let lossless = input.appendingPathComponent("lossless.caf")
+    let video = input.appendingPathComponent("source.mp4")
+    try makeTone(at: lossless)
+    try await makeVideo(at: video)
+    let processor = LocalMediaProcessor()
+
+    do {
+      let alac = try await processor.process(
+        lossless,
+        preset: .appleMusicBest,
+        suggestedFilename: "Lossless.caf",
+        destination: output
+      )
+      XCTAssertEqual(alac.decision, .transcodeALAC)
+      XCTAssertEqual(alac.url.pathExtension, "m4a")
+      XCTAssertNotNil(alac.output.audioCodec)
+    } catch MediaProcessingError.codecUnavailable {
+      throw XCTSkip("Active macOS does not expose Apple Lossless encoder.")
+    }
+
+    do {
+      let hevc = try await processor.process(
+        video,
+        preset: .appleVideoEfficient,
+        suggestedFilename: "Efficient.mp4",
+        destination: output
+      )
+      XCTAssertEqual(hevc.decision, .transcodeHEVC)
+      XCTAssertEqual(hevc.url.pathExtension, "mp4")
+      XCTAssertTrue(["hvc1", "hev1"].contains(hevc.output.videoCodec?.lowercased() ?? ""))
+    } catch MediaProcessingError.codecUnavailable {
+      throw XCTSkip("Active macOS does not expose HEVC encoder.")
+    }
+  }
+
+  func testPublicErrorMessagesCoverEveryCase() {
+    let acquisitionErrors: [LocalAcquisitionError] = [
+      .toolsMissing, .processFailed(1), .authenticationRequired, .accessDenied,
+      .formatUnavailable, .outputMissing,
+    ]
+    XCTAssertTrue(acquisitionErrors.allSatisfy { $0.errorDescription?.isEmpty == false })
+
+    let transcodeErrors: [AppleVideoTranscodeError] = [
+      .toolMissing, .failed(""), .failed("detail"), .outputMissing,
+    ]
+    XCTAssertTrue(transcodeErrors.allSatisfy { $0.errorDescription?.isEmpty == false })
+    XCTAssertFalse(AppleVideoTranscodeError.failed("").localizedDescription.contains("detail"))
+    XCTAssertTrue(AppleVideoTranscodeError.failed("detail").localizedDescription.contains("detail"))
+
+    let processingErrors: [MediaProcessingError] = [
+      .missingInput, .missingAudio, .exportUnavailable, .unsupportedOutput, .codecUnavailable,
+      .reader, .writer, .file("detail"), .export("detail"), .verification("detail"),
+      .unsupportedOperation("detail"),
+    ]
+    XCTAssertTrue(processingErrors.allSatisfy { $0.errorDescription?.isEmpty == false })
+    XCTAssertFalse(
+      MediaProcessingError.file("private detail").localizedDescription.contains("private detail"))
+    XCTAssertTrue(MediaProcessingError.export("detail").localizedDescription.contains("detail"))
+  }
+
+  func testMediaProcessorDecisionSizingAndVerificationRules() throws {
+    let wav = URL(fileURLWithPath: "/tmp/source.wav")
+    let caf = URL(fileURLWithPath: "/tmp/source.caf")
+    let m4a = URL(fileURLWithPath: "/tmp/source.m4a")
+    let mp4 = URL(fileURLWithPath: "/tmp/source.mp4")
+    let webm = URL(fileURLWithPath: "/tmp/source.webm")
+    let pcm = mediaInfo(audioCodec: "lpcm")
+    let aac = mediaInfo(audioCodec: "aac ", audioBitrate: 256_000)
+    let highAAC = mediaInfo(audioCodec: "aac ", audioBitrate: 320_000)
+    let avc = mediaInfo(videoCodec: "avc1", videoBitrate: 5_000_000, width: 1_920, height: 1_080)
+    let hevc = mediaInfo(videoCodec: "hvc1", videoBitrate: 2_000_000, width: 1_920, height: 1_080)
+
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: wav, preset: .appleMusicBest, info: pcm), .passthrough)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: caf, preset: .appleMusicBest, info: pcm), .transcodeALAC)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: webm, preset: .appleMusicBest, info: aac), .transcodeAAC)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: m4a, preset: .appleMusicEfficient, info: aac),
+      .passthrough)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: m4a, preset: .appleMusicEfficient, info: highAAC),
+      .transcodeAAC)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: mp4, preset: .appleVideoBest, info: avc), .passthrough)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: webm, preset: .appleVideoBest, info: avc), .transcodeHEVC)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: mp4, preset: .appleVideoEfficient, info: hevc),
+      .passthrough)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: mp4, preset: .appleVideoEfficient, info: avc),
+      .transcodeHEVC)
+    XCTAssertEqual(
+      LocalMediaProcessor.decision(for: webm, preset: .custom, info: avc), .passthrough)
+
+    XCTAssertTrue(LocalMediaProcessor.isLossless("flac"))
+    XCTAssertFalse(LocalMediaProcessor.isLossless("aac "))
+    XCTAssertFalse(LocalMediaProcessor.isLossless(nil))
+    XCTAssertEqual(
+      LocalMediaProcessor.hevcPreset(for: mediaInfo(width: 1_920, height: 1_080)),
+      AVAssetExportPresetHEVC1920x1080)
+    XCTAssertEqual(
+      LocalMediaProcessor.hevcPreset(for: mediaInfo(width: 3_840, height: 2_160)),
+      AVAssetExportPresetHEVC3840x2160)
+    XCTAssertEqual(
+      LocalMediaProcessor.hevcPreset(for: mediaInfo(width: 7_680, height: 4_320)),
+      AVAssetExportPresetHEVCHighestQuality)
+    XCTAssertGreaterThan(
+      LocalMediaProcessor.efficientVideoBitrate(
+        mediaInfo(width: 3_840, height: 2_160, frameRate: 60, isHDR: true)),
+      LocalMediaProcessor.efficientVideoBitrate(
+        mediaInfo(width: 1_920, height: 1_080, frameRate: 30, isHDR: false)))
+
+    let goodAudio = mediaInfo(audioCodec: "aac ", sampleRate: 44_100)
+    XCTAssertNoThrow(
+      try LocalMediaProcessor.verify(
+        source: goodAudio, output: goodAudio, preset: .appleMusicBest, decision: .passthrough))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodAudio,
+        output: mediaInfo(duration: 0, fileSize: 0, audioCodec: "aac "),
+        preset: .appleMusicBest,
+        decision: .passthrough))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodAudio,
+        output: mediaInfo(),
+        preset: .appleMusicBest,
+        decision: .passthrough))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodAudio,
+        output: mediaInfo(audioCodec: "aac ", sampleRate: 96_000),
+        preset: .appleMusicBest,
+        decision: .transcodeAAC))
+
+    let goodVideo = mediaInfo(videoCodec: "hvc1", width: 1_920, height: 1_080)
+    XCTAssertNoThrow(
+      try LocalMediaProcessor.verify(
+        source: goodVideo, output: goodVideo, preset: .appleVideoBest,
+        decision: .passthrough))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodVideo, output: mediaInfo(), preset: .appleVideoBest,
+        decision: .passthrough))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodVideo,
+        output: mediaInfo(videoCodec: "hvc1", width: 2_000, height: 1_080),
+        preset: .appleVideoBest,
+        decision: .transcodeHEVC))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: goodVideo,
+        output: mediaInfo(videoCodec: "hvc1", width: 1_920, height: 1_200),
+        preset: .appleVideoBest,
+        decision: .transcodeHEVC))
+    XCTAssertThrowsError(
+      try LocalMediaProcessor.verify(
+        source: mediaInfo(videoCodec: "hvc1", width: 1_920, height: 1_080, isHDR: true),
+        output: goodVideo,
+        preset: .appleVideoBest,
+        decision: .transcodeHEVC))
+  }
+
   func testConcurrentSavesReserveDistinctDestinationNames() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("EucranteConcurrentTests-\(UUID().uuidString)", isDirectory: true)
@@ -556,6 +1196,108 @@ final class EucranteCoreTests: XCTestCase {
     }
   }
 
+  private func temporaryDirectory(_ prefix: String) -> URL {
+    FileManager.default.temporaryDirectory.appendingPathComponent(
+      "\(prefix)-\(UUID().uuidString)", isDirectory: true)
+  }
+
+  private func mediaInfo(
+    duration: Double = 1,
+    fileSize: Int64 = 1,
+    audioCodec: String? = nil,
+    audioBitrate: Double? = nil,
+    sampleRate: Double? = nil,
+    channelCount: Int? = nil,
+    videoCodec: String? = nil,
+    videoBitrate: Double? = nil,
+    width: Int? = nil,
+    height: Int? = nil,
+    frameRate: Double? = nil,
+    isHDR: Bool = false
+  ) -> MediaFileInfo {
+    MediaFileInfo(
+      duration: duration,
+      fileSize: fileSize,
+      audioCodec: audioCodec,
+      audioBitrate: audioBitrate,
+      sampleRate: sampleRate,
+      channelCount: channelCount,
+      videoCodec: videoCodec,
+      videoBitrate: videoBitrate,
+      width: width,
+      height: height,
+      frameRate: frameRate,
+      isHDR: isHDR
+    )
+  }
+
+  private func executableScript(_ source: String, named name: String, in directory: URL) throws
+    -> URL
+  {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent(name)
+    try Data(source.utf8).write(to: url, options: .atomic)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    return url
+  }
+
+  private func downloaderScript(codec: String, in directory: URL, name: String) throws -> URL {
+    try executableScript(
+      """
+      #!/bin/sh
+      output=''
+      while [ "$#" -gt 0 ]; do
+        if [ "$1" = '--output' ]; then
+          output="$2"
+          shift 2
+        else
+          shift
+        fi
+      done
+      case "$output" in
+        *video.*) extension='mp4' ;;
+        *) extension='m4a' ;;
+      esac
+      file=$(printf '%s' "$output" | sed "s/%(ext)s/$extension/")
+      printf 'media' > "$file"
+      printf '%s\n' \
+        'EUCRANTE_TITLE:"Provider Title"' \
+        'EUCRANTE_TRACK:"Track Name"' \
+        'EUCRANTE_ARTIST:"Test Artist"' \
+        'EUCRANTE_CREATOR:"Test Creator"' \
+        'EUCRANTE_ALBUM:"Test Album"' \
+        'EUCRANTE_ALBUM_ARTIST:"Album Artist"' \
+        'EUCRANTE_COMPOSER:"Composer"' \
+        'EUCRANTE_GENRE:"Electronic"' \
+        'EUCRANTE_RELEASE_DATE:"20230102"' \
+        'EUCRANTE_RELEASE_YEAR:2024' \
+        'EUCRANTE_TRACK_NUMBER:"2"' \
+        'EUCRANTE_TRACK_COUNT:9' \
+        'EUCRANTE_DISC_NUMBER:1' \
+        'EUCRANTE_DISC_COUNT:"2"' \
+        'EUCRANTE_DESCRIPTION:"Description"' \
+        'EUCRANTE_THUMBNAIL:"https://example.com/cover.webp"' \
+        'EUCRANTE_ID:"fixture-id"' \
+        'EUCRANTE_VCODEC:"\(codec)"' \
+        'EUCRANTE_DURATION:"123.5"' \
+        'EUCRANTE_PROGRESS:50:100:' \
+        'EUCRANTE_PROGRESS:100:100:'
+      """,
+      named: name,
+      in: directory
+    )
+  }
+
+  private func acquirer(downloader: URL) -> LocalMediaAcquirer {
+    LocalMediaAcquirer(
+      tools: LocalMediaAcquirer.ToolPaths(
+        ytDLP: downloader,
+        deno: downloader,
+        ffmpeg: downloader
+      )
+    )
+  }
+
   private func makeTone(at url: URL) throws {
     let sampleRate = 44_100.0
     let format = try XCTUnwrap(
@@ -572,6 +1314,57 @@ final class EucranteCoreTests: XCTestCase {
     let file = try AVAudioFile(forWriting: url, settings: format.settings)
     try file.write(from: buffer)
   }
+
+  private func makeVideo(at url: URL) async throws {
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+    let input = AVAssetWriterInput(
+      mediaType: .video,
+      outputSettings: [
+        AVVideoCodecKey: AVVideoCodecType.h264,
+        AVVideoWidthKey: 64,
+        AVVideoHeightKey: 64,
+      ]
+    )
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+      assetWriterInput: input,
+      sourcePixelBufferAttributes: [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        kCVPixelBufferWidthKey as String: 64,
+        kCVPixelBufferHeightKey as String: 64,
+      ]
+    )
+    XCTAssertTrue(writer.canAdd(input))
+    writer.add(input)
+    XCTAssertTrue(writer.startWriting())
+    writer.startSession(atSourceTime: .zero)
+    var pixelBuffer: CVPixelBuffer?
+    XCTAssertEqual(
+      CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        64,
+        64,
+        kCVPixelFormatType_32BGRA,
+        nil,
+        &pixelBuffer
+      ),
+      kCVReturnSuccess
+    )
+    let buffer = try XCTUnwrap(pixelBuffer)
+    CVPixelBufferLockBaseAddress(buffer, [])
+    if let base = CVPixelBufferGetBaseAddress(buffer) {
+      memset(base, 0x40, CVPixelBufferGetDataSize(buffer))
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, [])
+    while !input.isReadyForMoreMediaData {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(adaptor.append(buffer, withPresentationTime: .zero))
+    input.markAsFinished()
+    await withCheckedContinuation { continuation in
+      writer.finishWriting { continuation.resume() }
+    }
+    XCTAssertEqual(writer.status, .completed, writer.error?.localizedDescription ?? "")
+  }
 }
 
 private final class LockedLineRecorder: @unchecked Sendable {
@@ -582,5 +1375,28 @@ private final class LockedLineRecorder: @unchecked Sendable {
 
   func append(_ value: String) {
     lock.withLock { values.append(value) }
+  }
+}
+
+private final class LockedProgressRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var stored: [Double] = []
+
+  var values: [Double] { lock.withLock { stored } }
+
+  func append(_ value: Double) {
+    lock.withLock { stored.append(value) }
+  }
+}
+
+private func xctAssertThrowsErrorAsync<T>(
+  _ expression: @autoclosure () async throws -> T,
+  _ handler: (Error) -> Void = { _ in }
+) async {
+  do {
+    _ = try await expression()
+    XCTFail("Expected expression to throw")
+  } catch {
+    handler(error)
   }
 }

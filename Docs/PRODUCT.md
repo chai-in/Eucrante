@@ -13,9 +13,12 @@ Eucrante should feel like a normal Mac utility: paste, choose an output, and sav
 ## Primary flow
 
 1. Paste or share an HTTP/HTTPS media link.
-2. Choose Music Best, Music Efficient, Video Best, Video Efficient, or Custom.
-3. Eucrante creates a local job, downloads to its private staging directory, merges or converts when needed, and verifies the result.
-4. Reveal the file in Finder, open it, move it to Trash, or explicitly import audio into Music.
+2. Optionally open Music metadata to provide title, artist, album details, or local artwork.
+3. Choose Music Best, Music Efficient, Video Best, Video Efficient, or Custom.
+4. Eucrante creates a local job, downloads to its private staging directory, merges or converts when needed, and verifies the result.
+5. Reveal the file in Finder, open it, move it to Trash, or explicitly import audio into Music.
+
+For Music presets, provider title, artist, album fields, and artwork are captured automatically. Source album artwork is used when exposed; otherwise the best available thumbnail becomes the cover. Optional manual values override only the fields the user supplied. Chosen and provider artwork is normalized and retained in Eucrante's private app data until the job is removed from history. Importing into Music sets library metadata and artwork without changing or re-encoding the downloaded audio.
 
 ## YouTube Premium
 
