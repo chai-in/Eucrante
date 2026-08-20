@@ -13,13 +13,13 @@
 - Architecture-labelled notarized-release policy with portable checksums and machine-readable provenance.
 - Native drag-to-Applications DMG packaging with a branded window, paired portable ZIP, and per-artifact provenance.
 - Static GitHub Pages product and documentation site deployed by pinned GitHub Actions.
+- Public repository metadata, HTTPS Pages, release immutability, pinned-Action enforcement, security analysis, and `main`/`v*` rulesets.
 - Deterministic app-orchestration coverage for verified completion, crash recovery, and authenticated-session cancellation, with ratcheted core/app coverage floors.
 
 ## Before the first public binary
 
 - Add a clean-machine UI test for first launch, browser consent, folder permission, Music automation, and relaunch recovery.
 - Ship tagged source-only GitHub Releases while the maintainer uses a free Apple developer account.
-- Enable the documented GitHub Pages and repository rulesets after authenticating the in-app browser.
 - If Apple Developer Program membership becomes available, ship paired notarized DMG/ZIP GitHub releases, then add a project-owned Homebrew Cask after release URLs and architecture coverage are stable.
 - Implement a separately reviewed signed Sparkle update feed and signing-key recovery policy or keep automatic updates disabled; release provenance is already generated.
 - Run licensed SDR/HDR and mono/stereo/multichannel media fixtures.
@@ -28,5 +28,5 @@
 ## Later
 
 - Verified AV1 input and HDR/color-metadata preservation after licensed fixtures pass.
-- Metadata and artwork editing with before/after previews.
+- Batch metadata editing and reusable metadata templates with before/after previews.
 - Additional providers only after their local extraction and legal boundaries are tested.

@@ -1,6 +1,6 @@
 # Product contract
 
-Eucrante should feel like a normal Mac utility: paste, choose an output, and save. Setup must never require a cloud account, server, terminal, network tunnel, or second computer.
+Eucrante should feel like a normal Mac utility: paste, choose an output, and save. Setup must never require an Eucrante account, hosted backend, terminal, network tunnel, or second computer.
 
 ## Principles
 
@@ -16,7 +16,7 @@ Eucrante should feel like a normal Mac utility: paste, choose an output, and sav
 2. Eucrante locally probes the link and shows its title, creator, artwork, duration, and available formats.
 3. Each one-click preset shows its selected codec, container, quality, and exact or estimated size.
 4. Optionally open Music metadata to provide title, artist, album details, or local artwork.
-5. Choose Music Best, Music Efficient, Video Best, Video Efficient, or Custom.
+5. Choose Music — Best, Music — Efficient, Video — Best, Video — Efficient, or Custom.
 6. Eucrante creates a local job, downloads to its private staging directory, merges or converts when needed, and verifies the result.
 7. Reveal the file in Finder, open it, move it to Trash, or explicitly import audio into Music.
 

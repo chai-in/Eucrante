@@ -12,7 +12,7 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 - Custom controls remain collapsed until requested.
 - The output folder is always visible.
 - Starting an output reveals a persistent bottom shelf with the active preset, phase, progress, Queue, and Cancel controls; completion leaves a concise saved-file confirmation.
-- No server, account, endpoint, or infrastructure concepts appear in the UI.
+- No Eucrante account, hosted server, endpoint, or infrastructure concepts appear in the UI; optional provider sign-in remains explicit.
 
 ## YouTube settings
 

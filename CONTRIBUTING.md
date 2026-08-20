@@ -21,7 +21,7 @@ Requirements:
 Run the same checks used by continuous integration:
 
 ```sh
-swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift
+swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift Scripts/render-dmg-background.swift
 ./Scripts/check-coverage.sh 92 83
 swift build -Xswiftc -warnings-as-errors
 swift run EucranteCoreChecks

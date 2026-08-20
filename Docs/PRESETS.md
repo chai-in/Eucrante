@@ -8,16 +8,16 @@ Presets are output policies, not promises that every provider exposes a lossless
 
 | One-click action | Source request | Preferred output | Storage policy |
 | --- | --- | --- | --- |
-| Apple Music — Best | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified source `.m4a` | Preserve the best directly compatible source without generation loss |
-| Apple Music — Efficient | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified AAC `.m4a`; preserve a suitable existing source | Storage-conscious without unnecessary re-encoding |
-| Apple Video — Best | Best H.264 through 1080p; VP9 for 1440p/4K; best AAC | Preserved H.264 or high-quality VideoToolbox HEVC in MP4 | Preserve resolution and favor picture quality |
-| Apple Video — Efficient | Same resolution policy and compatible AAC | Storage-balanced VideoToolbox HEVC + AAC | Smaller Apple-native output without upscaling or minimum-size compromises |
+| Music — Best | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified source `.m4a` | Preserve the best directly compatible source without generation loss |
+| Music — Efficient | Best Apple-compatible AAC/M4A audio exposed by the provider | Verified AAC `.m4a`; preserve a suitable existing source | Storage-conscious without unnecessary re-encoding |
+| Video — Best | Best H.264 through 1080p; VP9 for 1440p/4K; best AAC | Preserved H.264 or high-quality VideoToolbox HEVC in MP4 | Preserve resolution and favor picture quality |
+| Video — Efficient | Same resolution policy and compatible AAC | Storage-balanced VideoToolbox HEVC + AAC | Smaller Apple-native output without upscaling or minimum-size compromises |
 
 The main screen exposes these as four primary buttons. Once a valid URL is present, choosing a preset creates the job immediately; advanced controls create a Custom policy instead of silently modifying a named preset.
 
 ## Audio presets
 
-### Apple Music — Best
+### Music — Best
 
 Goal: the highest-quality Apple Music-compatible file without wasteful expansion.
 
@@ -26,7 +26,7 @@ Goal: the highest-quality Apple Music-compatible file without wasteful expansion
 3. Verify that the output contains readable audio and is non-empty before completion.
 4. Do not wrap lossy audio in Apple Lossless or claim quality the source does not contain.
 
-### Apple Music — Efficient
+### Music — Efficient
 
 Goal: high perceptual quality with predictable storage use.
 
@@ -41,7 +41,7 @@ If the provider exposes only one suitable AAC source, Best and Efficient may pre
 
 ## Video presets
 
-### Apple Video — Best
+### Video — Best
 
 Goal: preserve the highest Apple-compatible picture quality in a format supported by current Apple playback and library apps.
 
@@ -52,11 +52,11 @@ Goal: preserve the highest Apple-compatible picture quality in a format supporte
 
 The 4K SDR path is live and verified. HDR preservation is not yet promised; HDR/color fixtures remain a release gate.
 
-### Apple Video — Efficient
+### Video — Efficient
 
 Goal: materially smaller files while retaining strong visual quality and Apple compatibility.
 
-1. Request the same resolution and codec source policy as Video Best.
+1. Request the same resolution and codec source policy as Video — Best.
 2. Encode VP9 video as HEVC using Apple VideoToolbox with a storage-balanced quality setting, retaining source resolution and never upscaling; use hardware acceleration when available and Apple's software fallback otherwise.
 3. This is not a minimum-size mode and does not use low-quality compatibility settings.
 4. Do not claim HDR preservation until HDR/color fixtures ship.

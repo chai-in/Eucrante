@@ -1,6 +1,6 @@
 # Release process
 
-Eucrante has no unsigned public-release path. A publishable artifact must come from a clean, exactly tagged commit, use a Developer ID Application signature, pass the assembled-bundle audit, be accepted by Apple's notary service, carry a stapled ticket, pass Gatekeeper assessment, and ship with a portable SHA-256 file plus machine-readable provenance.
+Eucrante has no unsigned public binary-release path. A publishable app binary must come from a clean, exactly tagged commit, use a Developer ID Application signature, pass the assembled-bundle audit, be accepted by Apple's notary service, carry a stapled ticket, pass Gatekeeper assessment, and ship with a portable SHA-256 file plus machine-readable provenance.
 
 ## Architecture policy
 
@@ -22,7 +22,7 @@ make app
 git tag -a v0.1.0 -m "Eucrante 0.1.0"
 ```
 
-Do not push the tag until the release candidate has passed the signing and notarization steps below.
+For a binary release, do not push the tag until the release candidate has passed the signing and notarization steps below. A source-only release may push its checked tag before creating the draft described later.
 
 ## Sign, notarize, and package
 
@@ -49,7 +49,7 @@ shasum -a 256 -c Eucrante-0.1.0-1-macOS-arm64.dmg.sha256
 
 ## Distribution policy
 
-GitHub Releases is Eucrante's canonical distribution channel. With the maintainer's current free Apple developer account, releases are source-only: GitHub generates a ZIP and tarball from the exact version tag, and users build locally. Do not attach an unsigned or ad-hoc-signed app and instruct users to weaken Gatekeeper.
+GitHub Releases is Eucrante's canonical distribution channel. No tagged release exists yet. With the maintainer's current free Apple developer account, any published release must be source-only: GitHub generates a ZIP and tarball from the exact version tag, and users build locally. Do not attach an unsigned or ad-hoc-signed app and instruct users to weaken Gatekeeper.
 
 Notarization and Developer ID distribution require Apple Developer Program membership. If the project later gains that membership, a binary release carries a friendly DMG and portable ZIP per supported architecture, each with its own checksum and provenance record. `Scripts/create-dmg.sh` produces the native drag-to-Applications layout, signs the disk image, submits it separately to Apple, staples its ticket, and verifies Gatekeeper.
 

@@ -1,6 +1,6 @@
 # Eucrante
 
-Eucrante is a native macOS app for saving media directly on your Mac. There is no server, account, localhost service, Cloudflare setup, relay PC, or remote job store.
+Eucrante is a native macOS app for saving media directly on your Mac. There is no Eucrante account, server, localhost service, Cloudflare setup, relay PC, or remote job store.
 
 [Website](https://chai-in.github.io/Eucrante/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
 
@@ -10,7 +10,7 @@ The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bu
 
 ## Current product
 
-- Four one-click Apple output policies: Music Best, Music Efficient, Video Best, and Video Efficient.
+- Four one-click Apple output policies: Music — Best, Music — Efficient, Video — Best, and Video — Efficient.
 - Local YouTube downloads with a private YouTube sign-in inside Eucrante; no sign-in is needed for other supported providers.
 - YouTube Premium formats are requested from the same app and Mac network context; Eucrante never reads another browser's files.
 - H.264 through 1080p is merged with AAC locally without generation loss.
@@ -46,9 +46,9 @@ Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass
 
 ## Install
 
-Eucrante is currently distributed as FOSS source through [GitHub Releases](https://github.com/chai-in/Eucrante/releases). Download a tagged source archive and build it locally using the steps above.
+Eucrante has no tagged release yet. Clone `main` and build it locally using the steps above. The first [GitHub Release](https://github.com/chai-in/Eucrante/releases) will remain source-only while the maintainer uses a free Apple developer account.
 
-The maintainer currently uses a free Apple developer account, which does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, download the DMG matching your Mac architecture for the drag-to-Applications flow. A portable ZIP is also provided; verify either artifact with its matching `.sha256` file:
+The free account does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, each architecture will receive a drag-to-Applications DMG and portable ZIP, with matching checksum and provenance files:
 
 ```sh
 shasum -a 256 -c Eucrante-*.zip.sha256
