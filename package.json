@@ -1,0 +1,17 @@
+{
+  "name": "eucrante-site",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run test:cloudflare",
+    "deploy": "npm run build && wrangler deploy",
+    "test:cloudflare": "node Scripts/check-cloudflare-site.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260828.1": true
+  }
+}

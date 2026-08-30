@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://chai-in.github.io/Eucrante/sitemap.xml
+Sitemap: https://eucrante-site.tibcon.workers.dev/sitemap.xml

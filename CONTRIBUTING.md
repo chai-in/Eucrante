@@ -18,7 +18,7 @@ Requirements:
 - Full Xcode installation
 - Swift 6 toolchain
 
-Run the same checks used by continuous integration:
+Run the native app checks locally on macOS:
 
 ```sh
 swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift Scripts/render-dmg-background.swift
@@ -26,6 +26,13 @@ swift format lint --strict --recursive Sources Tests Package.swift Scripts/rende
 swift build -Xswiftc -warnings-as-errors
 swift run EucranteCoreChecks
 make app
+```
+
+The Cloudflare website build runs its portable validation separately:
+
+```sh
+npm ci
+npm run build
 ```
 
 ## Pull requests

@@ -2,7 +2,7 @@
 
 Eucrante is a native macOS app for saving media directly on your Mac. There is no Eucrante account, server, localhost service, Cloudflare setup, relay PC, or remote job store.
 
-[Website](https://chai-in.github.io/Eucrante/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
+[Website](https://eucrante-site.tibcon.workers.dev/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
 
 ![Eucrante icon](App/Artwork/EucranteIcon.png)
 
@@ -56,6 +56,8 @@ shasum -a 256 -c Eucrante-*.dmg.sha256
 ```
 
 Homebrew Cask support is deferred until the first stable notarized binary release because Homebrew does not replace Apple signing or notarization.
+
+The project website is deployed as Cloudflare Workers Static Assets. Its Cloudflare build runs `npm run build` before `npx wrangler deploy`. Native app checks remain local because Eucrante requires macOS, AppKit, AVFoundation, and Xcode, which are unavailable in Cloudflare's Linux build image.
 
 ## Architecture and product notes
 

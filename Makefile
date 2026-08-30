@@ -1,4 +1,4 @@
-.PHONY: check test coverage build app dmg-development verify-app notarize publish-source-release publish-release clean
+.PHONY: check test coverage cloudflare-check build app dmg-development verify-app notarize publish-source-release publish-release clean
 
 check:
 	swift format lint --strict --recursive Sources Tests Package.swift Scripts/render-app-icon.swift Scripts/render-dmg-background.swift
@@ -9,6 +9,9 @@ test:
 
 coverage:
 	./Scripts/check-coverage.sh 92 83
+
+cloudflare-check:
+	npm run build
 
 build:
 	swift build --product Eucrante

@@ -12,8 +12,8 @@
 - Escalation-tested child-process cancellation, bounded streaming diagnostics, and synchronous atomic job-state persistence.
 - Architecture-labelled notarized-release policy with portable checksums and machine-readable provenance.
 - Native drag-to-Applications DMG packaging with a branded window, paired portable ZIP, and per-artifact provenance.
-- Static GitHub Pages product and documentation site deployed by pinned GitHub Actions.
-- Public repository metadata, HTTPS Pages, release immutability, pinned-Action enforcement, security analysis, and `main`/`v*` rulesets.
+- Static product and documentation site deployed through Cloudflare Workers Static Assets after portable site validation.
+- Public repository metadata, release immutability, security analysis, and protected `main`/`v*` rulesets without GitHub Actions usage.
 - Deterministic app-orchestration coverage for verified completion, crash recovery, and authenticated-session cancellation, with ratcheted core/app coverage floors.
 
 ## Before the first public binary
