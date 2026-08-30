@@ -49,6 +49,7 @@ All notable changes to Eucrante will be documented here.
 
 - CI validates plist and shell syntax, enforces strict Swift formatting plus `92%` core and `83%` app line-coverage floors, and audits the assembled signed app bundle, tool architectures, licenses, identifier, icon, and restricted FFmpeg configuration.
 - CI checkout credentials are not persisted, and Dependabot groups weekly updates for pinned GitHub Actions.
-- Latest measured line coverage is 92.52% for EucranteCore and 84.97% for EucranteApp, above enforced 92% and 83% floors.
+- Latest measured line coverage is 92.52% for EucranteCore and 84.91% for EucranteApp, above enforced 92% and 83% floors.
+- Explicit main-actor app-model initialization avoids an Xcode 16.4 Swift 6.1 compiler crash in release CI.
 - The release script now requires a clean exact version tag and Developer ID signature before notarization, then emits paired architecture-labelled DMG/ZIP artifacts, portable checksums, and JSON provenance containing Apple's notarization request IDs.
 - All nested tools and the app now use Hardened Runtime. Deno receives only its required V8 JIT entitlement; yt-dlp receives only the library-validation exception required by its extracted Python framework. The verifier rejects unexpected extra entitlements and exercises both helpers under their final signatures.
