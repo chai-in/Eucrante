@@ -12,8 +12,8 @@ fail() {
   exit 1
 }
 
-[[ "$mode" == "development" || "$mode" == "release" ]] \
-  || fail "mode must be development or release"
+[[ "$mode" == "development" || "$mode" == "public" || "$mode" == "release" ]] \
+  || fail "mode must be development, public, or release"
 [[ -d "$app_path" ]] || fail "app bundle not found: $app_path"
 
 "$project_root/Scripts/verify-app.sh" "$app_path"
@@ -22,6 +22,19 @@ version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_
 build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Contents/Info.plist")"
 app_architectures="$(lipo -archs "$app_path/Contents/MacOS/Eucrante")"
 architecture_tag="${app_architectures// /-}"
+
+if [[ "$mode" == "public" ]]; then
+  [[ -z "$(git -C "$project_root" status --porcelain)" ]] \
+    || fail "the Git worktree must be clean for a public DMG"
+  expected_tag="v$version"
+  actual_tag="$(git -C "$project_root" describe --exact-match --tags HEAD 2>/dev/null || true)"
+  [[ "$actual_tag" == "$expected_tag" ]] \
+    || fail "HEAD must have the exact release tag $expected_tag"
+  app_signature="$(codesign --display --verbose=4 "$app_path" 2>&1)"
+  [[ "$app_signature" == *"Signature=adhoc"* ]] \
+    || fail "public mode requires the explicitly unnotarized ad-hoc-signed app"
+fi
+
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/eucrante-dmg.XXXXXX")"
 mounted_device=""
 cleanup() {
@@ -107,6 +120,9 @@ mounted_device=""
 if [[ "$mode" == "development" ]]; then
   output_directory="$project_root/dist/development"
   output_name="Eucrante-$version-$build-macOS-$architecture_tag-development.dmg"
+elif [[ "$mode" == "public" ]]; then
+  output_directory="$project_root/dist"
+  output_name="Eucrante-$version-$build-macOS-$architecture_tag-unnotarized.dmg"
 else
   output_directory="$project_root/dist"
   output_name="Eucrante-$version-$build-macOS-$architecture_tag.dmg"
@@ -118,7 +134,7 @@ output_path="$output_directory/$output_name"
   || fail "DMG release artifact already exists: $output_name"
 
 final_output_path="$output_path"
-if [[ "$mode" == "release" ]]; then
+if [[ "$mode" != "development" ]]; then
   output_path="$temporary_directory/$output_name"
 fi
 
@@ -127,8 +143,16 @@ hdiutil convert "$read_write_image" \
   -imagekey zlib-level=9 \
   -o "$output_path" >/dev/null
 
+notarization_status=""
+notary_request_id=""
+signing_status=""
 if [[ "$mode" == "development" ]]; then
   codesign --force --sign - "$output_path"
+elif [[ "$mode" == "public" ]]; then
+  codesign --force --sign - "$output_path"
+  notarization_status="not-notarized"
+  notary_request_id="not-applicable"
+  signing_status="ad-hoc"
 else
   notary_profile="${APPLE_NOTARY_PROFILE:-}"
   [[ -n "$notary_profile" ]] \
@@ -159,7 +183,11 @@ else
   xcrun stapler staple "$output_path"
   xcrun stapler validate "$output_path"
   spctl --assess --type open --context context:primary-signature --verbose=2 "$output_path"
+  notarization_status="accepted-and-stapled"
+  signing_status="developer-id"
+fi
 
+if [[ "$mode" != "development" ]]; then
   checksum_path="$output_path.sha256"
   output_sha256="$(shasum -a 256 "$output_path" | awk '{print $1}')"
   printf '%s  %s\n' "$output_sha256" "$output_name" > "$checksum_path"
@@ -179,8 +207,10 @@ else
   plutil -insert archive.name -string "$output_name" "$provenance_path"
   plutil -insert archive.sha256 -string "$output_sha256" "$provenance_path"
   plutil -insert archive.bytes -integer "$(stat -f '%z' "$output_path")" "$provenance_path"
+  plutil -insert signing -dictionary "$provenance_path"
+  plutil -insert signing.status -string "$signing_status" "$provenance_path"
   plutil -insert notarization -dictionary "$provenance_path"
-  plutil -insert notarization.status -string "accepted-and-stapled" "$provenance_path"
+  plutil -insert notarization.status -string "$notarization_status" "$provenance_path"
   plutil -insert notarization.requestID -string "$notary_request_id" "$provenance_path"
   plutil -insert tools -dictionary "$provenance_path"
   for tool in yt-dlp deno ffmpeg; do

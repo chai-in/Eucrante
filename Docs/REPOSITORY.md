@@ -47,7 +47,8 @@ Cloudflare's build image is Linux. It cannot compile or test Eucrante's AppKit, 
 ## Releases
 
 - No tagged release exists yet.
-- Any release remains source-only while the maintainer uses a free Apple developer account.
+- While the maintainer uses a free Apple developer account, public binary previews are explicitly ad-hoc signed, unnotarized, architecture-labelled, and published as GitHub prereleases.
 - Draft first; publish only after a clean-checkout build and complete test pass.
+- Unnotarized preview DMGs include matching checksums and provenance, retain the `-unnotarized` filename suffix, and include the Settings > Privacy & Security > Open Anyway instructions.
 - Future binary releases must contain paired notarized DMG and ZIP artifacts for each supported architecture, plus one checksum and provenance file per artifact.
-- Never publish unsigned or ad-hoc-signed app binaries.
+- Never describe an unnotarized preview as Apple-verified, and never tell users to disable Gatekeeper or strip quarantine attributes.

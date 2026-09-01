@@ -56,6 +56,6 @@ Vulnerabilities solely in yt-dlp, Deno, a media provider, or Apple frameworks sh
 
 ## Known alpha limitations
 
-- No signed and notarized public release exists yet.
+- Public preview DMGs may be ad-hoc signed and unnotarized while the maintainer uses a free Apple developer account. Their GitHub Release, filename, checksum, provenance, and first-launch instructions must state this boundary.
 - Automatic updates remain disabled until a signing-key and release-feed policy exists.
 - Broader licensed golden-media and clean-machine browser/Music permission testing remains before v1.

@@ -53,13 +53,15 @@
             or external browser dependency.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#install">Build Eucrante</a>
+            <a class="button primary" href="https://github.com/chai-in/Eucrante/releases">
+              Download DMG
+            </a>
             <a class="button secondary" href="https://github.com/chai-in/Eucrante">
               View source
             </a>
           </div>
           <p class="release-note">
-            <span>Current distribution</span> Apache-2.0 source on GitHub · first tagged release pending
+            <span>Current distribution</span> Public DMG flow ready · first tagged preview pending
           </p>
         </div>
 
@@ -158,32 +160,38 @@
       <section class="section install-section" id="install">
         <div class="section-heading compact">
           <p class="kicker">Install today</p>
-          <h2>Build Eucrante from source.</h2>
+          <h2>Drag, approve once, launch.</h2>
           <p>
-            The maintainer currently has a free Apple developer account, so Eucrante does not
-            distribute an unsigned binary that asks people to weaken Gatekeeper.
+            Preview DMGs are ad-hoc signed but not notarized because the maintainer uses a free
+            Apple developer account. macOS blocks the first launch; approve Eucrante without
+            disabling Gatekeeper.
           </p>
         </div>
         <div class="install-grid">
-          <div class="terminal" aria-label="Build commands">
-            <div class="terminal-title"><span></span><span></span><span></span> Terminal</div>
-            <pre><code><b>git</b> clone https://github.com/chai-in/Eucrante.git
-<b>cd</b> Eucrante
-<b>make</b> check
-<b>make</b> app
-<b>open</b> dist/Eucrante.app</code></pre>
+          <div class="terminal" aria-label="First launch steps">
+            <div class="terminal-title"><span></span><span></span><span></span> First launch</div>
+            <pre><code><b>1.</b> Download DMG + checksum
+<b>2.</b> Drag Eucrante to Applications
+<b>3.</b> Try opening Eucrante once
+<b>4.</b> Open System Settings
+   Privacy &amp; Security > Open Anyway
+<b>5.</b> Confirm Open</code></pre>
           </div>
           <div class="install-details">
             <div>
-              <strong>Requirements</strong>
-              <span>macOS 14 or newer, full Xcode, Swift 6</span>
+              <strong>Public preview</strong>
+              <span>macOS 14 or newer · Apple Silicon/Intel shown in each filename</span>
             </div>
             <div>
-              <strong>DMG-ready release flow</strong>
+              <strong>Verify before opening</strong>
               <span>
-                A polished drag-to-Applications DMG pipeline is built and tested locally. Public
-                DMGs remain disabled until Developer ID signing and notarization are available.
+                Download the matching .sha256 file from GitHub and verify the DMG. Every preview
+                filename and provenance record says unnotarized.
               </span>
+            </div>
+            <div>
+              <strong>Keep Gatekeeper on</strong>
+              <span>Never disable Gatekeeper or remove quarantine attributes.</span>
             </div>
             <div>
               <strong>Use responsibly</strong>

@@ -47,4 +47,16 @@ for (const htmlFile of htmlFiles) {
   }
 }
 
+const homepage = await readFile(join(site, "index.html"), "utf8");
+for (const requiredCopy of [
+  "Download DMG",
+  "not notarized",
+  "Privacy &amp; Security > Open Anyway",
+  "Never disable Gatekeeper",
+]) {
+  if (!homepage.includes(requiredCopy)) {
+    throw new Error(`Missing public-DMG safety copy: ${requiredCopy}`);
+  }
+}
+
 console.log("Cloudflare static-site checks passed.");

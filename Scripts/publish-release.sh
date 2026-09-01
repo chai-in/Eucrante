@@ -7,17 +7,21 @@ mode="binary"
 if [[ "${1:-}" == "--source-only" ]]; then
   mode="source"
   shift
+elif [[ "${1:-}" == "--public-dmg" ]]; then
+  mode="public-dmg"
+  shift
 fi
 notes_file="${1:-}"
 
 usage() {
   cat <<'USAGE'
-Usage: ./Scripts/publish-release.sh [--source-only] PATH_TO_RELEASE_NOTES.md
+Usage: ./Scripts/publish-release.sh [--source-only|--public-dmg] PATH_TO_RELEASE_NOTES.md
 
 Creates a draft GitHub release from the exact pushed version tag. With
 --source-only, GitHub supplies its generated source archives and no binary is
-attached. Binary mode validates and attaches every signed, notarized artifact
-set in dist/. The script never publishes a release.
+attached. With --public-dmg, it validates and attaches clearly labelled
+unnotarized DMGs, checksums, and provenance to a prerelease draft. Binary mode
+validates signed, notarized artifact sets in dist/. The script never publishes.
 USAGE
 }
 
@@ -55,8 +59,14 @@ git -C "$project_root" ls-remote --exit-code --tags origin "refs/tags/$expected_
 
 setopt local_options null_glob
 assets=()
-if [[ "$mode" == "binary" ]]; then
+if [[ "$mode" == "public-dmg" ]]; then
+  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*-unnotarized.dmg(N))
+  (( ${#disk_images} > 0 )) \
+    || fail "no architecture-labelled unnotarized public DMGs were found in dist/"
+  archives=("${disk_images[@]}")
+elif [[ "$mode" == "binary" ]]; then
   disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*.dmg(N))
+  disk_images=("${(@)disk_images:#*-unnotarized.dmg}")
   (( ${#disk_images} > 0 )) \
     || fail "no architecture-labelled release DMGs were found in dist/"
 
@@ -68,6 +78,9 @@ if [[ "$mode" == "binary" ]]; then
     archives+=("$disk_image" "$portable_archive")
   done
 
+fi
+
+if [[ "$mode" == "binary" || "$mode" == "public-dmg" ]]; then
   head_commit="$(git -C "$project_root" rev-parse HEAD)"
   for archive in "${archives[@]}"; do
     checksum="$archive.sha256"
@@ -81,6 +94,10 @@ if [[ "$mode" == "binary" ]]; then
     )
 
     archive_hash="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    if [[ "$archive" == *.dmg ]]; then
+      codesign --verify --strict --verbose=2 "$archive"
+      hdiutil imageinfo "$archive" >/dev/null
+    fi
     [[ "$(plutil -extract gitTag raw "$provenance")" == "$expected_tag" ]] \
       || fail "provenance tag does not match $expected_tag: ${provenance:t}"
     [[ "$(plutil -extract gitCommit raw "$provenance")" == "$head_commit" ]] \
@@ -91,8 +108,15 @@ if [[ "$mode" == "binary" ]]; then
       || fail "provenance archive hash does not match: ${provenance:t}"
     [[ "$(plutil -extract archive.bytes raw "$provenance")" == "$(stat -f '%z' "$archive")" ]] \
       || fail "provenance archive size does not match: ${provenance:t}"
-    [[ "$(plutil -extract notarization.status raw "$provenance")" == "accepted-and-stapled" ]] \
-      || fail "provenance does not confirm accepted and stapled notarization: ${provenance:t}"
+    notarization_status="$(plutil -extract notarization.status raw "$provenance")"
+    signing_status="$(plutil -extract signing.status raw "$provenance")"
+    if [[ "$mode" == "public-dmg" ]]; then
+      [[ "$notarization_status" == "not-notarized" && "$signing_status" == "ad-hoc" ]] \
+        || fail "public DMG provenance must declare ad-hoc signing and no notarization: ${provenance:t}"
+    else
+      [[ "$notarization_status" == "accepted-and-stapled" && "$signing_status" == "developer-id" ]] \
+        || fail "provenance does not confirm Developer ID signing and stapled notarization: ${provenance:t}"
+    fi
     assets+=("$archive" "$checksum" "$provenance")
   done
 fi
@@ -101,13 +125,38 @@ if gh release view "$expected_tag" >/dev/null 2>&1; then
   fail "a GitHub release already exists for $expected_tag"
 fi
 
+release_notes="$notes_file"
+release_kind_args=()
+release_title="Eucrante $version"
+if [[ "$mode" == "public-dmg" ]]; then
+  generated_notes="$(mktemp "${TMPDIR:-/tmp}/eucrante-release-notes.XXXXXX")"
+  trap 'rm -f "$generated_notes"' EXIT
+  {
+    print '# Unnotarized macOS preview'
+    print
+    print 'This DMG is ad-hoc signed but not notarized because the maintainer currently uses a free Apple developer account. macOS will block the first launch.'
+    print
+    print 'Install: drag Eucrante to Applications, try to open it once, then open System Settings > Privacy & Security and click Open Anyway. Confirm Open when macOS asks. Never disable Gatekeeper and never run a command that removes quarantine attributes.'
+    print
+    print 'Verify the downloaded DMG with its attached `.sha256` file before opening it.'
+    print
+    print '---'
+    print
+    cat "$notes_file"
+  } > "$generated_notes"
+  release_notes="$generated_notes"
+  release_kind_args+=(--prerelease)
+  release_title="Eucrante $version Preview"
+fi
+
 release_url="$(
   gh release create "$expected_tag" \
     "${assets[@]}" \
     --draft \
+    "${release_kind_args[@]}" \
     --verify-tag \
-    --title "Eucrante $version" \
-    --notes-file "$notes_file"
+    --title "$release_title" \
+    --notes-file "$release_notes"
 )"
 
 echo "Created draft release: $release_url"

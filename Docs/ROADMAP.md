@@ -12,6 +12,7 @@
 - Escalation-tested child-process cancellation, bounded streaming diagnostics, and synchronous atomic job-state persistence.
 - Architecture-labelled notarized-release policy with portable checksums and machine-readable provenance.
 - Native drag-to-Applications DMG packaging with a branded window, paired portable ZIP, and per-artifact provenance.
+- Public unnotarized preview-DMG flow with explicit filenames, checksums, provenance, prerelease status, and macOS Open Anyway guidance.
 - Static product and documentation site deployed through Cloudflare Workers Static Assets after portable site validation.
 - Public repository metadata, release immutability, security analysis, and protected `main`/`v*` rulesets without GitHub Actions usage.
 - Deterministic app-orchestration coverage for verified completion, crash recovery, and authenticated-session cancellation, with ratcheted core/app coverage floors.
@@ -19,7 +20,7 @@
 ## Before the first public binary
 
 - Add a clean-machine UI test for first launch, browser consent, folder permission, Music automation, and relaunch recovery.
-- Ship tagged source-only GitHub Releases while the maintainer uses a free Apple developer account.
+- Ship tagged GitHub prereleases with clearly labelled unnotarized DMGs while the maintainer uses a free Apple developer account.
 - If Apple Developer Program membership becomes available, ship paired notarized DMG/ZIP GitHub releases, then add a project-owned Homebrew Cask after release URLs and architecture coverage are stable.
 - Implement a separately reviewed signed Sparkle update feed and signing-key recovery policy or keep automatic updates disabled; release provenance is already generated.
 - Run licensed SDR/HDR and mono/stereo/multichannel media fixtures.

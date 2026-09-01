@@ -46,16 +46,24 @@ Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass
 
 ## Install
 
-Eucrante has no tagged release yet. Clone `main` and build it locally using the steps above. The first [GitHub Release](https://github.com/chai-in/Eucrante/releases) will remain source-only while the maintainer uses a free Apple developer account.
+Eucrante has no tagged release yet. Until the first preview appears, clone `main` and build it locally using the steps above. Future public preview DMGs will be attached to [GitHub Releases](https://github.com/chai-in/Eucrante/releases) with matching checksum and provenance files.
 
-The free account does not include Developer ID distribution or notarization. Eucrante will not publish an unsigned app that asks users to weaken Gatekeeper. If notarized binaries become available later, each architecture will receive a drag-to-Applications DMG and portable ZIP, with matching checksum and provenance files:
+The maintainer's free Apple developer account does not include Developer ID distribution or notarization. Preview DMGs are therefore ad-hoc signed, clearly named `*-unnotarized.dmg`, and published as GitHub prereleases. macOS blocks their first launch. This does not require disabling Gatekeeper:
+
+1. Download the DMG and its `.sha256` file from the same GitHub Release.
+2. Verify the checksum, open the DMG, and drag Eucrante to Applications.
+3. Try to open Eucrante once.
+4. Open **System Settings > Privacy & Security**, click **Open Anyway**, then confirm **Open**.
+
+Never disable Gatekeeper and never run a command that removes quarantine attributes. Review the tag, source, checksum, and provenance before approving an unnotarized build.
+
+Verify from the directory containing both downloaded files:
 
 ```sh
-shasum -a 256 -c Eucrante-*.zip.sha256
 shasum -a 256 -c Eucrante-*.dmg.sha256
 ```
 
-Homebrew Cask support is deferred until the first stable notarized binary release because Homebrew does not replace Apple signing or notarization.
+If Developer ID and notarization become available later, stable releases will use notarized DMG and ZIP artifacts that open normally. Homebrew Cask support remains deferred until then because Homebrew does not replace Apple signing or notarization.
 
 The project website is deployed as Cloudflare Workers Static Assets. Its Cloudflare build runs `npm run build` before `npx wrangler deploy`. Native app checks remain local because Eucrante requires macOS, AppKit, AVFoundation, and Xcode, which are unavailable in Cloudflare's Linux build image.
 
