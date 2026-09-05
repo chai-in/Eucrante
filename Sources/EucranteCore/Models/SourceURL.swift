@@ -1,6 +1,11 @@
 import Foundation
 
 public enum SourceURLValidator {
+  public static func isYouTube(_ url: URL) -> Bool {
+    guard let host = url.host?.lowercased() else { return false }
+    return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
+  }
+
   public static func validate(_ input: String) throws -> URL {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { throw SourceURLValidationError.empty }

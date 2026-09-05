@@ -113,7 +113,7 @@ struct MusicLibraryImporter {
     return "\"\(escaped)\""
   }
 
-  static func temporaryArtwork(for remoteURL: URL?) async -> URL? {
+  nonisolated static func temporaryArtwork(for remoteURL: URL?) async -> URL? {
     guard let remoteURL else { return nil }
     do {
       let sourceData: Data
@@ -126,18 +126,9 @@ struct MusicLibraryImporter {
         else { return nil }
         sourceData = try Data(contentsOf: remoteURL, options: .mappedIfSafe)
       } else {
-        guard remoteURL.scheme?.lowercased() == "https" else { return nil }
-        var request = URLRequest(url: remoteURL)
-        request.timeoutInterval = 15
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard data.count > 0, data.count <= ArtworkStore.maximumSourceBytes,
-          let http = response as? HTTPURLResponse,
-          (200..<300).contains(http.statusCode),
-          http.mimeType?.lowercased().hasPrefix("image/") == true
-        else { return nil }
-        sourceData = data
+        sourceData = try await ArtworkStore.download(from: remoteURL)
       }
-      guard let artworkData = ArtworkNormalizer.jpegData(from: sourceData) else { return nil }
+      guard let artworkData = ArtworkNormalizer.jpegForImport(from: sourceData) else { return nil }
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "eucrante-artwork-\(UUID().uuidString)", isDirectory: true)
       return try SecureCredentialFile.write(

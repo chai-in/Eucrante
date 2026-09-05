@@ -1,4 +1,5 @@
-import { access, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +54,7 @@ for (const requiredCopy of [
   "not notarized",
   "Privacy &amp; Security > Open Anyway",
   "Never disable Gatekeeper",
+  "Apple silicon only (arm64)",
 ]) {
   if (!homepage.includes(requiredCopy)) {
     throw new Error(`Missing public-DMG safety copy: ${requiredCopy}`);
@@ -60,3 +62,35 @@ for (const requiredCopy of [
 }
 
 console.log("Cloudflare static-site checks passed.");
+
+const built = join(root, "dist", "site");
+const builtHTML = await readFile(join(built, "index.html"), "utf8");
+const headers = await readFile(join(built, "_headers"), "utf8");
+if (headers.trim() !== "/static/*\n  Cache-Control: public, max-age=31536000, immutable") {
+  throw new Error("Only fingerprinted static assets may use immutable caching.");
+}
+if (/<script\b/i.test(builtHTML)) throw new Error("The site must remain JavaScript-free.");
+let initialBytes = Buffer.byteLength(builtHTML);
+for (const name of await readdir(join(built, "static"))) {
+  const [, stem, hash, extension] = name.match(/^(.+)\.([a-f0-9]{16})\.(css|png)$/) ?? [];
+  const data = await readFile(join(built, "static", name));
+  if (!hash || createHash("sha256").update(data).digest("hex").slice(0, 16) !== hash) {
+    throw new Error(`Stale asset fingerprint: ${name}`);
+  }
+  if (!builtHTML.includes(`static/${name}`)) throw new Error(`Unused built asset: ${name}`);
+  if (stem !== "og") initialBytes += data.byteLength;
+  if (stem === "icon") {
+    // PNG IHDR dimensions: enough for the 38px brand at 3x, without shipping the app-size icon.
+    if (data.readUInt32BE(16) !== 128 || data.readUInt32BE(20) !== 128) {
+      throw new Error("Website icon must be the packaged 128px rendition.");
+    }
+  }
+  if (extension === "css" && /@import|url\(/i.test(data.toString())) {
+    throw new Error("Unexpected additional stylesheet network dependency.");
+  }
+}
+for (const [, path] of builtHTML.matchAll(/(?:href|src)="(static\/[^"?]+)"/g)) {
+  await access(join(built, path));
+}
+if (initialBytes > 52 * 1024) throw new Error(`Initial resource budget exceeded: ${initialBytes}`);
+console.log(`Built asset hashes, cache rules, and resource budget passed (${initialBytes} bytes before HTTP compression).`);

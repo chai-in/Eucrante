@@ -1,13 +1,14 @@
 # Third-party notices
 
-Eucrante's build embeds the following unmodified command-line tools. They are separate works and retain their own licenses.
+Eucrante's build embeds the following command-line tools. They are separate works and retain their own licenses.
 
 ## yt-dlp
 
 - Project: https://github.com/yt-dlp/yt-dlp
 - Pinned release: `2026.07.04`
 - License: The Unlicense
-- Embedded artifact: upstream `yt-dlp_macos`
+- Source artifact: upstream `yt-dlp_macos.zip` (onedir), verified before preparation
+- Packaging changes: remove Intel Mach-O slices using `lipo`, restore byte-verified Python.framework aliases as relative symlinks, and sign the launcher and native libraries. Python bytecode, extractors, dependency data, and licenses are retained. No runtime source code is patched.
 
 ## Deno
 

@@ -3,6 +3,6 @@
   "name": "eucrante-site",
   "compatibility_date": "2026-08-30",
   "assets": {
-    "directory": "./Site"
+    "directory": "./dist/site"
   }
 }

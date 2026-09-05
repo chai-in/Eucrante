@@ -3,6 +3,7 @@ import Combine
 import EucranteCore
 import Foundation
 import UniformTypeIdentifiers
+import WebKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -10,9 +11,9 @@ final class AppModel: ObservableObject {
     didSet { schedulePreview() }
   }
   @Published var musicMetadataDraft = MusicMetadataDraft()
-  @Published private(set) var mediaPreview: MediaPreview?
-  @Published private(set) var isLoadingPreview = false
-  @Published private(set) var previewMessage: String?
+  var mediaPreview: MediaPreview? { preview.media }
+  var isLoadingPreview: Bool { preview.isLoading }
+  var previewMessage: String? { preview.message }
   @Published var selectedPreset: EucrantePreset = .custom
   @Published var preferences: DownloadPreferences {
     didSet {
@@ -20,10 +21,13 @@ final class AppModel: ObservableObject {
       defaults.set(data, forKey: Self.preferencesKey)
     }
   }
-  @Published private(set) var jobs: [PersistentJob] = []
-  @Published private(set) var activeJobCount = 0 {
-    didSet {
-      NSApplication.shared.dockTile.badgeLabel = activeJobCount > 0 ? "\(activeJobCount)" : nil
+  var jobs: [PersistentJob] { queue.jobs }
+  var activeJobCount: Int { queue.runningCount }
+  var queuePaused: Bool {
+    get { queue.isPaused }
+    set {
+      queue.isPaused = newValue
+      defaults.set(newValue, forKey: "jobs.paused")
     }
   }
   @Published var errorMessage: String?
@@ -38,7 +42,7 @@ final class AppModel: ObservableObject {
         return
       }
       defaults.set(maximumConcurrentJobs, forKey: Self.maximumConcurrentKey)
-      drainQueue()
+      queue.maximumConcurrentJobs = clamped
     }
   }
   @Published var completionNotificationsEnabled: Bool {
@@ -56,24 +60,24 @@ final class AppModel: ObservableObject {
     }
   }
   @Published private(set) var youtubeSessionReady = false
+  var youtubeWebsiteDataStore: WKWebsiteDataStore? { youtubeSessionStore.websiteDataStore }
   @Published var showingYouTubeSignIn = false
   @Published private(set) var localToolsReady = false
   @Published private(set) var localToolsMessage = "Checking local media tools…"
   @Published private(set) var isCheckingLocalTools = false
 
   private let localAcquirer: any LocalMediaAcquiring
-  private let localPreviewer: (any LocalMediaPreviewing)?
-  private let mediaProcessor: LocalMediaProcessor
-  private let videoTranscoder: AppleVideoTranscoder
   private let youtubeSessionStore: any YouTubeSessionStoring
   private let musicImporter = MusicLibraryImporter()
   private let completionNotifier = CompletionNotifier()
-  private let jobStore: JobStore
   private let defaults: UserDefaults
-  private var activeTasks: [UUID: Task<Void, Never>] = [:]
-  private var previewTask: Task<Void, Never>?
-  private var previewRequestID = UUID()
-  private let previewDebounce: Duration
+  let queue: DownloadQueue
+  private let preview: LinkPreviewModel
+  private let workspace: DownloadWorkspace
+  private var subscriptions: Set<AnyCancellable> = []
+  private var sessionGeneration = UUID()
+  private var signingOut = false
+  @Published private(set) var importingJobs: Set<UUID> = []
 
   private static let preferencesKey = "save.preferences.v1"
   private static let outputBookmarkKey = "downloads.output-bookmark.v1"
@@ -92,12 +96,16 @@ final class AppModel: ObservableObject {
   ) {
     self.defaults = defaults
     self.localAcquirer = localAcquirer
-    self.localPreviewer = localPreviewer ?? (localAcquirer as? any LocalMediaPreviewing)
-    self.mediaProcessor = mediaProcessor
-    self.videoTranscoder = videoTranscoder
     self.youtubeSessionStore = youtubeSessionStore
-    self.jobStore = jobStore
-    self.previewDebounce = previewDebounce
+    workspace = DownloadWorkspace(root: jobStore.directoryURL)
+    preview = LinkPreviewModel(
+      previewer: localPreviewer ?? (localAcquirer as? any LocalMediaPreviewing),
+      session: youtubeSessionStore, workspace: workspace, debounce: previewDebounce)
+    queue = DownloadQueue(
+      store: jobStore,
+      pipeline: DownloadPipeline(
+        acquirer: localAcquirer, processor: mediaProcessor, transcoder: videoTranscoder,
+        session: youtubeSessionStore, workspace: workspace))
     preferences =
       defaults.data(forKey: Self.preferencesKey)
       .flatMap { try? JSONDecoder().decode(DownloadPreferences.self, from: $0) }
@@ -106,94 +114,47 @@ final class AppModel: ObservableObject {
     completionNotificationsEnabled = defaults.bool(forKey: Self.notificationsKey)
     destinationDirectory = Self.resolveDestination(from: defaults)
 
-    Task {
-      purgeTransientCookieExports()
-      loadHistory()
-      await refreshLocalToolStatus()
-      await refreshYouTubeSession()
+    queue.maximumConcurrentJobs = maximumConcurrentJobs
+    queue.isPaused = defaults.bool(forKey: "jobs.paused")
+    queue.onError = { [weak self] in self?.errorMessage = $0 }
+    queue.onCompletion = { [weak self] in self?.didComplete($0) }
+    queue.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(
+      in: &subscriptions)
+    preview.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(
+      in: &subscriptions)
+    queue.$runningCount.sink {
+      NSApplication.shared.dockTile.badgeLabel = $0 > 0 ? String($0) : nil
+    }.store(in: &subscriptions)
+    queue.load(defaultRequest: currentRequest(for: .custom))
+    Task { [weak self] in
+      guard let self else { return }
+      async let session: Void = refreshYouTubeSession()
+      async let tools: Void = refreshLocalToolStatus()
+      _ = await (session, tools)
     }
   }
 
   var canSubmit: Bool {
-    !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && localToolsReady
+    localToolsReady && (try? SourceURLValidator.validate(sourceText)) != nil
   }
 
   var isSubmitting: Bool { activeJobCount > 0 }
-  var activeJobs: [PersistentJob] { jobs.filter { $0.state.isActive } }
-  var historyJobs: [PersistentJob] { jobs.filter { !$0.state.isActive } }
+  var activeJobs: [PersistentJob] { queue.activeJobs }
+  var historyJobs: [PersistentJob] { queue.historyJobs }
 
   private func schedulePreview() {
-    previewTask?.cancel()
-    let requestID = UUID()
-    previewRequestID = requestID
-    mediaPreview = nil
-    previewMessage = nil
-    isLoadingPreview = false
-    let input = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !input.isEmpty else { return }
-    previewTask = Task { [weak self] in
-      guard let self else { return }
-      do {
-        try await Task.sleep(for: previewDebounce)
-        try Task.checkCancellation()
-        await loadPreview(for: input, requestID: requestID)
-      } catch is CancellationError {
-        return
-      } catch {
-        return
-      }
-    }
+    preview.schedule(sourceText, toolsReady: localToolsReady, youtubeReady: youtubeSessionReady)
   }
 
-  private func loadPreview(for input: String, requestID: UUID) async {
-    guard previewRequestID == requestID else { return }
-    guard let localPreviewer, localToolsReady,
-      let sourceURL = try? SourceURLValidator.validate(input)
-    else { return }
-    guard !Self.isYouTube(sourceURL) || youtubeSessionReady else {
-      previewMessage = "Sign in to YouTube in Eucrante to load Premium format details."
-      return
-    }
-    let previewDirectory = jobsRootDirectory.appendingPathComponent(
-      ".preview-\(UUID().uuidString)", isDirectory: true)
-    isLoadingPreview = true
-    defer {
-      if previewRequestID == requestID { isLoadingPreview = false }
-      try? FileManager.default.removeItem(at: previewDirectory)
-    }
-    do {
-      try SecureCredentialFile.prepareDirectory(previewDirectory)
-      let cookieFile =
-        Self.isYouTube(sourceURL)
-        ? try await youtubeSessionStore.exportCookieFile(to: previewDirectory)
-        : nil
-      let preview = try await localPreviewer.preview(
-        sourceURL: sourceURL,
-        cookieFile: cookieFile,
-        workingDirectory: previewDirectory
-      )
-      try Task.checkCancellation()
-      guard previewRequestID == requestID,
-        sourceText.trimmingCharacters(in: .whitespacesAndNewlines) == input
-      else { return }
-      mediaPreview = preview
-      previewMessage = nil
-    } catch is CancellationError {
-      return
-    } catch {
-      guard previewRequestID == requestID,
-        sourceText.trimmingCharacters(in: .whitespacesAndNewlines) == input
-      else { return }
-      previewMessage = userMessage(for: error)
-    }
+  private func currentRequest(for preset: EucrantePreset) -> SaveRequest {
+    SaveRequest(
+      preferences: preset.requestPreferences(from: preferences), destination: destinationDirectory,
+      destinationBookmark: defaults.data(forKey: Self.outputBookmarkKey))
   }
 
   func submit(preset: EucrantePreset? = nil) async {
-    guard canSubmit else {
-      if !localToolsReady {
-        errorMessage = "Eucrante's local media tools are not ready. Open Settings and check them."
-      }
+    guard localToolsReady else {
+      errorMessage = "Eucrante's local media tools are not ready. Open Settings and check them."
       return
     }
 
@@ -214,13 +175,15 @@ final class AppModel: ObservableObject {
     let selected = preset ?? selectedPreset
     var metadataOverrides: MediaMetadata?
     let jobID = UUID()
-    if selected.isAudio {
+    let isAudio = selected.isAudio || (selected == .custom && preferences.downloadMode == .audio)
+    if isAudio {
       do {
         metadataOverrides = try musicMetadataDraft.metadata()
         if let selectedArtwork = metadataOverrides?.artworkURL {
           metadataOverrides?.artworkURL = try ArtworkStore.persist(
             selectedURL: selectedArtwork,
-            jobID: jobID
+            jobID: jobID,
+            rootDirectory: workspace.artwork
           )
         }
       } catch {
@@ -233,53 +196,29 @@ final class AppModel: ObservableObject {
       id: jobID,
       sourceURL: sourceURL,
       preset: selected,
+      request: currentRequest(for: selected),
+      mediaMetadata: mediaPreview?.metadata,
       metadataOverrides: metadataOverrides
     )
-    jobs.insert(job, at: 0)
-    sourceText = ""
-    if selected.isAudio { musicMetadataDraft = MusicMetadataDraft() }
-    persistJobs()
-    drainQueue()
-  }
-
-  func retry(_ jobID: UUID) {
-    update(jobID) {
-      $0.state = .queued
-      $0.errorCode = nil
-      $0.errorMessage = nil
-      $0.progress = nil
-      $0.updatedAt = .now
-    }
-    drainQueue()
-  }
-
-  func cancel(_ jobID: UUID) {
-    activeTasks[jobID]?.cancel()
-    update(jobID) {
-      $0.state = .cancelled
-      $0.errorMessage = "Cancelled"
-      $0.updatedAt = .now
+    do {
+      try queue.enqueue(job)
+      sourceText = ""
+      if isAudio { musicMetadataDraft = MusicMetadataDraft() }
+    } catch {
+      ArtworkStore.remove(jobID: jobID, rootDirectory: workspace.artwork)
+      errorMessage = userMessage(for: error)
     }
   }
 
-  func removeFromHistory(_ jobID: UUID) {
-    guard let index = jobs.firstIndex(where: { $0.id == jobID }), !jobs[index].state.isActive else {
-      return
-    }
-    removeStagingData(for: jobs[index])
-    ArtworkStore.remove(jobID: jobID)
-    jobs.remove(at: index)
-    persistJobs()
-  }
+  func retry(_ jobID: UUID) { queue.retry(jobID) }
+  func cancel(_ jobID: UUID) { queue.cancel(jobID) }
+  func removeFromHistory(_ jobID: UUID) { queue.remove(jobID) }
 
   func removeLocalFile(_ jobID: UUID) {
     guard let job = jobs.first(where: { $0.id == jobID }), let url = job.outputURL else { return }
     do {
       try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-      update(jobID) {
-        $0.outputPath = nil
-        $0.updatedAt = .now
-      }
+      queue.updateFile(jobID, outputPath: nil)
       statusMessage = "Moved the local file to Trash."
     } catch {
       errorMessage = "The local file could not be moved to Trash."
@@ -287,16 +226,16 @@ final class AppModel: ObservableObject {
   }
 
   func importToMusic(_ jobID: UUID) {
-    guard let job = jobs.first(where: { $0.id == jobID }), job.preset.isAudio,
+    guard let job = jobs.first(where: { $0.id == jobID }), job.isAudio, !job.importedToMusic,
+      !importingJobs.contains(jobID),
       let output = job.outputURL
     else { return }
+    importingJobs.insert(jobID)
     Task { @MainActor in
+      defer { importingJobs.remove(jobID) }
       do {
         try await musicImporter.importFile(at: output, metadata: job.mediaMetadata)
-        update(jobID) {
-          $0.importedToMusic = true
-          $0.updatedAt = .now
-        }
+        queue.markImported(jobID)
         statusMessage = "Imported \(output.lastPathComponent) into Music."
       } catch {
         errorMessage = userMessage(for: error)
@@ -350,10 +289,12 @@ final class AppModel: ObservableObject {
   }
 
   func refreshLocalToolStatus() async {
+    guard !isCheckingLocalTools else { return }
     isCheckingLocalTools = true
     defer { isCheckingLocalTools = false }
     let status = await localAcquirer.toolStatus()
     localToolsReady = status.ready
+    queue.toolsReady = status.ready
     if status.ready {
       let downloader = status.downloaderVersion ?? "ready"
       let runtime =
@@ -363,7 +304,6 @@ final class AppModel: ObservableObject {
         status.transcoderVersion?.split(separator: " ").prefix(3).joined(separator: " ")
         ?? "converter ready"
       localToolsMessage = "Ready · downloader \(downloader) · \(runtime) · \(transcoder)"
-      drainQueue()
       if !sourceText.isEmpty { schedulePreview() }
     } else {
       localToolsMessage = "Local media tools are missing. Reinstall Eucrante or rebuild the app."
@@ -395,6 +335,8 @@ final class AppModel: ObservableObject {
   func finishYouTubeSignIn() {
     showingYouTubeSignIn = false
     Task {
+      // Account switching can change format access even when readiness stays true.
+      await preview.stop()
       await refreshYouTubeSession()
       if youtubeSessionReady {
         statusMessage = "YouTube is signed in and ready."
@@ -405,23 +347,29 @@ final class AppModel: ObservableObject {
   }
 
   func refreshYouTubeSession() async {
-    youtubeSessionReady = await youtubeSessionStore.hasAuthenticatedSession()
-    if youtubeSessionReady, !sourceText.isEmpty { schedulePreview() }
+    let generation = sessionGeneration
+    let ready = await youtubeSessionStore.hasAuthenticatedSession()
+    guard generation == sessionGeneration, !signingOut else { return }
+    youtubeSessionReady = ready
+    queue.youtubeReady = ready
+    schedulePreview()
   }
 
   func signOutOfYouTube() async {
-    let activeYouTubeJobs = activeJobs.filter { Self.isYouTube($0.sourceURL) }
-    for job in activeYouTubeJobs {
-      cancel(job.id)
-    }
-    purgeTransientCookieExports()
-    await youtubeSessionStore.clear()
+    guard !signingOut else { return }
+    signingOut = true
+    sessionGeneration = UUID()
     youtubeSessionReady = false
-    let saveLabel = activeYouTubeJobs.count == 1 ? "save" : "saves"
+    queue.youtubeReady = false
+    await preview.stop()
+    let cancelled = await queue.cancelYouTubeJobs()
+    await youtubeSessionStore.clear()
+    signingOut = false
+    schedulePreview()
     statusMessage =
-      activeYouTubeJobs.isEmpty
+      cancelled == 0
       ? "Removed Eucrante's private YouTube session."
-      : "Signed out and cancelled \(activeYouTubeJobs.count) active YouTube \(saveLabel)."
+      : "Signed out and cancelled \(cancelled) YouTube saves."
   }
 
   func reveal(_ url: URL) {
@@ -432,14 +380,7 @@ final class AppModel: ObservableObject {
     NSWorkspace.shared.open(url)
   }
 
-  func clearHistory() {
-    for job in jobs where !job.state.isActive {
-      removeStagingData(for: job)
-      ArtworkStore.remove(jobID: job.id)
-    }
-    jobs.removeAll { !$0.state.isActive }
-    persistJobs()
-  }
+  func clearHistory() { queue.clearHistory() }
 
   func exportDiagnostics() {
     let panel = NSSavePanel()
@@ -487,359 +428,14 @@ final class AppModel: ObservableObject {
     statusMessage = "Ready to save the shared link."
   }
 
-  private func start(_ jobID: UUID) {
-    guard activeTasks[jobID] == nil, activeJobCount < maximumConcurrentJobs,
-      jobs.first(where: { $0.id == jobID })?.state == .queued
-    else { return }
-    activeJobCount += 1
-    let task = Task { [weak self] in
-      guard let self else { return }
-      await execute(jobID)
-      activeTasks[jobID] = nil
-      activeJobCount = max(0, activeJobCount - 1)
-      drainQueue()
-    }
-    activeTasks[jobID] = task
-  }
-
-  private func drainQueue() {
-    guard localToolsReady else { return }
-    while activeJobCount < maximumConcurrentJobs,
-      let job = jobs.first(where: { $0.state == .queued && activeTasks[$0.id] == nil })
-    {
-      start(job.id)
-    }
-  }
-
-  private func execute(_ jobID: UUID) async {
-    guard let job = jobs.first(where: { $0.id == jobID }) else { return }
-    let jobDestination = destinationDirectory
-    let destinationAccess = jobDestination.startAccessingSecurityScopedResource()
-    defer {
-      if destinationAccess { jobDestination.stopAccessingSecurityScopedResource() }
-    }
-    update(jobID) {
-      $0.state = .resolving
-      $0.progress = nil
-      $0.updatedAt = .now
-    }
-
-    do {
-      let jobPreferences = job.preset.requestPreferences(from: preferences)
-      let staging = stagingDirectory(for: job.id)
-      try SecureCredentialFile.prepareDirectory(jobsRootDirectory)
-      try SecureCredentialFile.prepareDirectory(staging)
-      update(job.id) {
-        $0.state = .downloading
-        $0.stagingPath = staging.path
-        $0.updatedAt = .now
-      }
-      let cookieFile =
-        Self.isYouTube(job.sourceURL) && youtubeSessionReady
-        ? try await youtubeSessionStore.exportCookieFile(to: staging)
-        : nil
-      let result: LocalAcquisitionResult
-      do {
-        result = try await localAcquirer.acquire(
-          sourceURL: job.sourceURL,
-          preset: job.preset,
-          preferences: jobPreferences,
-          cookieFile: cookieFile,
-          workingDirectory: staging,
-          progress: localAcquisitionProgressHandler(for: job.id)
-        )
-      } catch {
-        if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
-        throw error
-      }
-      if let cookieFile { try? FileManager.default.removeItem(at: cookieFile) }
-      switch result {
-      case .single(let input, let filename, let metadata):
-        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
-        update(job.id) { $0.mediaMetadata = resolvedMetadata }
-        try await finalize(input, filename: filename, job: job, destination: jobDestination)
-      case .merge(let video, let audio, let filename, let metadata):
-        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
-        update(job.id) { $0.mediaMetadata = resolvedMetadata }
-        update(job.id) {
-          $0.state = .processing
-          $0.progress = nil
-          $0.updatedAt = .now
-        }
-        let merged = try await mediaProcessor.merge(
-          video: video,
-          audio: audio,
-          filename: filename,
-          workingDirectory: staging
-        )
-        try await finalize(merged, filename: filename, job: job, destination: jobDestination)
-      case .transcode(
-        let video, let audio, let filename, let duration, let quality, let metadata):
-        let resolvedMetadata = await resolvedMetadata(metadata, for: job)
-        update(job.id) { $0.mediaMetadata = resolvedMetadata }
-        update(job.id) {
-          $0.state = .processing
-          $0.progress = 0
-          $0.updatedAt = .now
-        }
-        let converted = try await videoTranscoder.transcode(
-          video: video,
-          audio: audio,
-          duration: duration,
-          quality: quality,
-          workingDirectory: staging,
-          progress: processingProgressHandler(for: job.id)
-        )
-        try await finalize(
-          converted,
-          filename: filename,
-          job: job,
-          destination: jobDestination,
-          processedDecision: .transcodeHEVC
-        )
-      }
-    } catch is CancellationError {
-      update(jobID) {
-        $0.state = .cancelled
-        $0.errorMessage = "Cancelled"
-        $0.updatedAt = .now
-      }
-    } catch {
-      fail(jobID, error: error)
-    }
-  }
-
-  private func finalize(
-    _ input: URL,
-    filename: String,
-    job: PersistentJob,
-    destination: URL,
-    processedDecision: MediaDecision? = nil
-  ) async throws {
-    let output: URL
-    let decision: MediaDecision
-    if let processedDecision {
-      let processed = try await mediaProcessor.process(
-        input,
-        preset: .custom,
-        suggestedFilename: filename,
-        destination: destination,
-        progress: processingProgressHandler(for: job.id)
-      )
-      output = processed.url
-      decision = processedDecision
-    } else if job.preset.requiresLocalVerification {
-      update(job.id) {
-        $0.state = .processing
-        $0.progress = 0
-        $0.updatedAt = .now
-      }
-      let processed = try await mediaProcessor.process(
-        input,
-        preset: job.preset,
-        suggestedFilename: filename,
-        destination: destination,
-        progress: processingProgressHandler(for: job.id)
-      )
-      output = processed.url
-      decision = processed.decision
-    } else if input.path.hasPrefix(stagingDirectory(for: job.id).path + "/") {
-      let processed = try await mediaProcessor.process(
-        input,
-        preset: .custom,
-        suggestedFilename: filename,
-        destination: destination,
-        progress: processingProgressHandler(for: job.id)
-      )
-      output = processed.url
-      decision = processed.decision
-    } else {
-      output = input
-      decision = .passthrough
-    }
-
-    update(job.id) {
-      $0.state = .verifying
-      $0.progress = 1
-      $0.updatedAt = .now
-    }
-    _ = try await mediaProcessor.inspect(output)
-
-    let byteCount =
-      (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
-    update(job.id) {
-      $0.filename = output.lastPathComponent
-      $0.outputPath = output.path
-      $0.bytesCompleted = byteCount
-      $0.bytesExpected = byteCount
-      $0.mediaDecision = decision
-      $0.updatedAt = .now
-    }
-
-    try await retainAndComplete(output, jobID: job.id)
-  }
-
-  private func resolvedMetadata(
-    _ providerMetadata: MediaMetadata,
-    for job: PersistentJob
-  ) async -> MediaMetadata {
-    var metadata = providerMetadata.applyingUserOverrides(job.metadataOverrides)
-    guard job.preset.isAudio, job.metadataOverrides?.artworkURL == nil,
-      let providerArtwork = metadata.artworkURL,
-      let cachedArtwork = await ArtworkStore.cacheProviderArtwork(
-        from: providerArtwork,
-        jobID: job.id
-      )
-    else { return metadata }
-    metadata.artworkURL = cachedArtwork
-    return metadata
-  }
-
-  private func retainAndComplete(_ output: URL, jobID: UUID) async throws {
-    guard let job = jobs.first(where: { $0.id == jobID }) else { return }
-
-    let byteCount = (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
-    update(jobID) {
-      $0.state = .completed
-      $0.filename = output.lastPathComponent
-      $0.outputPath = output.path
-      $0.bytesCompleted = byteCount
-      $0.bytesExpected = byteCount
-      $0.progress = 1
-      $0.errorCode = nil
-      $0.errorMessage = nil
-      $0.updatedAt = .now
-    }
-    statusMessage = "Saved \(output.lastPathComponent)"
-
-    if job.stagingPath != nil {
-      try? FileManager.default.removeItem(at: stagingDirectory(for: jobID))
-      update(jobID) { $0.stagingPath = nil }
-    }
-    NSSound(named: "Glass")?.play()
+  private func didComplete(_ job: PersistentJob) {
+    guard let filename = job.filename else { return }
+    statusMessage = "Saved \(filename)"
     if completionNotificationsEnabled {
       Task { [completionNotifier] in
-        await completionNotifier.send(
-          filename: output.lastPathComponent,
-          preset: job.preset.displayName
-        )
+        await completionNotifier.send(filename: filename, preset: job.preset.displayName)
       }
     }
-  }
-
-  private func processingProgressHandler(for jobID: UUID) -> @Sendable (Double) -> Void {
-    { [weak self] fraction in
-      Task { @MainActor [weak self] in
-        self?.update(jobID, persist: false) {
-          $0.progress = min(1, max(0, fraction))
-          $0.updatedAt = .now
-        }
-      }
-    }
-  }
-
-  private func localAcquisitionProgressHandler(
-    for jobID: UUID
-  ) -> @Sendable (LocalAcquisitionProgress) -> Void {
-    { [weak self] progress in
-      Task { @MainActor [weak self] in
-        self?.update(jobID, persist: false) {
-          $0.progress = progress.fraction
-          $0.bytesCompleted = progress.bytesCompleted
-          $0.bytesExpected = progress.bytesExpected
-          $0.updatedAt = .now
-        }
-      }
-    }
-  }
-
-  private func loadHistory() {
-    do {
-      var loaded = try jobStore.load()
-      for index in loaded.indices
-      where loaded[index].state.isActive && loaded[index].state != .queued {
-        loaded[index].state = .failed
-        loaded[index].errorCode = "interrupted"
-        loaded[index].errorMessage =
-          "Eucrante closed before this job finished. Choose Retry to continue."
-        loaded[index].updatedAt = .now
-      }
-      jobs = loaded.sorted { $0.createdAt > $1.createdAt }
-      persistJobs()
-      drainQueue()
-    } catch {
-      errorMessage = userMessage(for: error)
-    }
-  }
-
-  private func persistJobs() {
-    do {
-      try jobStore.save(jobs)
-    } catch {
-      errorMessage = userMessage(for: error)
-    }
-  }
-
-  private func update(
-    _ id: UUID,
-    persist: Bool = true,
-    change: (inout PersistentJob) -> Void
-  ) {
-    guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-    change(&jobs[index])
-    if persist { persistJobs() }
-  }
-
-  private func fail(_ id: UUID, error: Error) {
-    fail(id, message: userMessage(for: error))
-  }
-
-  private func fail(_ id: UUID, message: String, code: String? = nil) {
-    update(id) {
-      $0.state = .failed
-      $0.errorCode = code
-      $0.errorMessage = message
-      $0.updatedAt = .now
-    }
-    errorMessage = message
-  }
-
-  private func stagingDirectory(for jobID: UUID) -> URL {
-    jobsRootDirectory.appendingPathComponent(jobID.uuidString, isDirectory: true)
-  }
-
-  private var jobsRootDirectory: URL {
-    let base =
-      FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      ?? FileManager.default.temporaryDirectory
-    return
-      base
-      .appendingPathComponent("Eucrante", isDirectory: true)
-      .appendingPathComponent("Jobs", isDirectory: true)
-  }
-
-  private func purgeTransientCookieExports() {
-    try? SecureCredentialFile.prepareDirectory(jobsRootDirectory)
-    guard
-      let jobDirectories = try? FileManager.default.contentsOfDirectory(
-        at: jobsRootDirectory,
-        includingPropertiesForKeys: [.isDirectoryKey],
-        options: [.skipsHiddenFiles]
-      )
-    else { return }
-    for directory in jobDirectories {
-      try? SecureCredentialFile.prepareDirectory(directory)
-      let cookieFile = directory.appendingPathComponent(".eucrante-youtube-cookies.txt")
-      if FileManager.default.fileExists(atPath: cookieFile.path) {
-        try? FileManager.default.removeItem(at: cookieFile)
-      }
-    }
-  }
-
-  private func removeStagingData(for job: PersistentJob) {
-    guard job.stagingPath != nil else { return }
-    let directory = stagingDirectory(for: job.id)
-    try? FileManager.default.removeItem(at: directory)
   }
 
   private struct DiagnosticsReport: Codable {
@@ -881,7 +477,6 @@ final class AppModel: ObservableObject {
   }
 
   nonisolated static func isYouTube(_ url: URL) -> Bool {
-    guard let host = url.host?.lowercased() else { return false }
-    return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
+    SourceURLValidator.isYouTube(url)
   }
 }

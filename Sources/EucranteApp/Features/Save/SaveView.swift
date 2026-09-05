@@ -6,7 +6,6 @@ struct SaveView: View {
   @ObservedObject var model: AppModel
   @FocusState private var sourceFocused: Bool
   @State private var customExpanded = false
-  @State private var metadataExpanded = false
 
   private let presetColumns = [
     GridItem(.flexible(), spacing: 10),
@@ -16,7 +15,18 @@ struct SaveView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
-        VStack(spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
+          HStack(spacing: 12) {
+            Image(systemName: "arrow.down.document")
+              .font(.title2)
+              .foregroundStyle(Color.eucranteAccent)
+            Text("New Save").font(.title2.weight(.semibold))
+            Spacer()
+            if model.queuePaused {
+              Label("Queue paused", systemImage: "pause.circle")
+                .font(.caption).foregroundStyle(.secondary)
+            }
+          }
           sourceField
           mediaPreview
 
@@ -27,7 +37,7 @@ struct SaveView: View {
             presetButton(.appleVideoEfficient, icon: "rectangle.compress.vertical")
           }
 
-          musicMetadataEditor
+          MusicMetadataEditor(model: model)
 
           Divider()
 
@@ -57,22 +67,22 @@ struct SaveView: View {
             .padding(.top, 12)
           }
         }
-        .eucranteCard()
-        .frame(maxWidth: 600)
+        .frame(maxWidth: 660)
 
         HStack(spacing: 8) {
           Image(systemName: "folder")
-          Text(model.destinationDirectory.path(percentEncoded: false))
+          Text(model.destinationDirectory.lastPathComponent)
             .lineLimit(1)
-            .truncationMode(.middle)
+            .help(model.destinationDirectory.path(percentEncoded: false))
+          Spacer()
           Button("Choose…") { model.chooseDestinationDirectory() }
             .buttonStyle(.link)
         }
-        .font(.caption)
+        .font(.callout)
         .foregroundStyle(.secondary)
-        .frame(maxWidth: 600, alignment: .leading)
+        .frame(maxWidth: 660, alignment: .leading)
       }
-      .padding(.horizontal, 32)
+      .padding(.horizontal, 28)
       .padding(.vertical, 24)
       .frame(maxWidth: .infinity)
     }
@@ -89,149 +99,6 @@ struct SaveView: View {
     .onChange(of: model.focusRequestID) { sourceFocused = true }
   }
 
-  private var musicMetadataEditor: some View {
-    let automatic = model.mediaPreview?.metadata
-    return DisclosureGroup(isExpanded: $metadataExpanded) {
-      VStack(spacing: 10) {
-        metadataField("Title", text: $model.musicMetadataDraft.title, automatic: automatic?.title)
-        metadataField(
-          "Artist", text: $model.musicMetadataDraft.artist, automatic: automatic?.artist)
-        metadataField("Album", text: $model.musicMetadataDraft.album, automatic: automatic?.album)
-        metadataField(
-          "Album Artist", text: $model.musicMetadataDraft.albumArtist,
-          automatic: automatic?.albumArtist)
-        metadataField(
-          "Composer", text: $model.musicMetadataDraft.composer, automatic: automatic?.composer)
-        metadataField("Genre", text: $model.musicMetadataDraft.genre, automatic: automatic?.genre)
-
-        HStack(spacing: 12) {
-          compactMetadataField(
-            "Year", text: $model.musicMetadataDraft.year,
-            automatic: automatic?.year.map(String.init))
-          compactMetadataField(
-            "Track", text: $model.musicMetadataDraft.trackNumber,
-            automatic: numberedMetadata(automatic?.trackNumber, count: automatic?.trackCount))
-          compactMetadataField(
-            "Disc", text: $model.musicMetadataDraft.discNumber,
-            automatic: numberedMetadata(automatic?.discNumber, count: automatic?.discCount))
-        }
-
-        HStack(spacing: 10) {
-          if let url = model.musicMetadataDraft.artworkURL,
-            let image = NSImage(contentsOf: url)
-          {
-            Image(nsImage: image)
-              .resizable()
-              .scaledToFill()
-              .frame(width: 44, height: 44)
-              .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-              .accessibilityLabel("Selected artwork")
-          } else if let automaticArtwork = automatic?.artworkURL {
-            AsyncImage(url: automaticArtwork) { phase in
-              if case .success(let image) = phase {
-                image.resizable().scaledToFill()
-              } else {
-                Image(systemName: "photo")
-                  .font(.title3)
-                  .foregroundStyle(.secondary)
-              }
-            }
-            .frame(width: 44, height: 44)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityLabel("Source artwork")
-          } else {
-            Image(systemName: "photo")
-              .font(.title3)
-              .foregroundStyle(.secondary)
-              .frame(width: 44, height: 44)
-              .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-              .accessibilityHidden(true)
-          }
-
-          VStack(alignment: .leading, spacing: 1) {
-            Text("Artwork")
-              .foregroundStyle(.secondary)
-            if model.musicMetadataDraft.artworkURL == nil, automatic?.artworkURL != nil {
-              Text("Auto — Source artwork")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            } else if model.musicMetadataDraft.artworkURL == nil, model.mediaPreview != nil {
-              Text("Auto — None fetched")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-          }
-          Spacer()
-          Button("Choose…") { model.chooseMusicArtwork() }
-          if model.musicMetadataDraft.artworkURL != nil {
-            Button {
-              model.musicMetadataDraft.artworkURL = nil
-            } label: {
-              Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Remove selected artwork")
-          }
-        }
-
-        if !model.musicMetadataDraft.isEmpty {
-          HStack {
-            Spacer()
-            Button("Clear Metadata") { model.clearMusicMetadata() }
-              .buttonStyle(.link)
-          }
-        }
-      }
-      .padding(.top, 12)
-    } label: {
-      Label("Music metadata", systemImage: "music.note.list")
-    }
-  }
-
-  private func metadataField(
-    _ label: String,
-    text: Binding<String>,
-    automatic: String?
-  ) -> some View {
-    LabeledContent(label) {
-      TextField(metadataPlaceholder(automatic), text: text)
-        .textFieldStyle(.roundedBorder)
-        .frame(maxWidth: 380)
-    }
-  }
-
-  private func compactMetadataField(
-    _ label: String,
-    text: Binding<String>,
-    automatic: String?
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(label)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      TextField(metadataPlaceholder(automatic), text: text)
-        .textFieldStyle(.roundedBorder)
-    }
-  }
-
-  private func metadataPlaceholder(
-    _ value: String?,
-    fallback: String = "Auto — None fetched"
-  ) -> String {
-    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-      return fallback
-    }
-    return value
-  }
-
-  private func numberedMetadata(_ number: Int?, count: Int?) -> String? {
-    guard let number else { return nil }
-    guard let count, count > 0 else { return String(number) }
-    return "\(number) of \(count)"
-  }
-
   private var sourceField: some View {
     HStack(spacing: 10) {
       Image(systemName: "link")
@@ -240,8 +107,18 @@ struct SaveView: View {
         .textFieldStyle(.plain)
         .font(.body)
         .focused($sourceFocused)
-        .onSubmit { Task { await model.submit(preset: .custom) } }
+        .onSubmit { Task { await model.submit() } }
         .accessibilityLabel("Public media link")
+      if model.sourceText.isEmpty {
+        Button {
+          if let text = NSPasteboard.general.string(forType: .string) { model.sourceText = text }
+        } label: {
+          Image(systemName: "document.on.clipboard")
+        }
+        .buttonStyle(.plain)
+        .help("Paste link")
+        .accessibilityLabel("Paste link")
+      }
       if !model.sourceText.isEmpty {
         Button {
           model.sourceText = ""
@@ -251,11 +128,12 @@ struct SaveView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Clear link")
+        .help("Clear link")
       }
     }
     .padding(.horizontal, 14)
     .frame(height: 44)
-    .background(.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .background(.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     .overlay {
       RoundedRectangle(cornerRadius: 10, style: .continuous)
         .stroke(
@@ -288,7 +166,7 @@ struct SaveView: View {
           }
         }
         .frame(width: 76, height: 76)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
 
         VStack(alignment: .leading, spacing: 4) {
@@ -314,7 +192,12 @@ struct SaveView: View {
       HStack(spacing: 8) {
         Image(systemName: "info.circle")
         Text(message)
-          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+        if let url = try? SourceURLValidator.validate(model.sourceText),
+          AppModel.isYouTube(url), !model.youtubeSessionReady
+        {
+          Button("Sign In") { model.openYouTubeSignIn() }
+        }
         Spacer()
       }
       .font(.caption)
@@ -345,7 +228,7 @@ struct SaveView: View {
       .padding(.horizontal, 12)
       .frame(
         maxWidth: .infinity,
-        minHeight: model.mediaPreview == nil ? 52 : 68,
+        minHeight: 72,
         alignment: .leading
       )
       .contentShape(Rectangle())
@@ -356,7 +239,15 @@ struct SaveView: View {
   }
 
   private func presetDetail(_ preset: EucrantePreset) -> String? {
-    guard let output = model.mediaPreview?.output(for: preset) else { return nil }
+    guard let output = model.mediaPreview?.output(for: preset) else {
+      switch preset {
+      case .appleMusicBest: return "Original audio quality"
+      case .appleMusicEfficient: return "AAC audio, smaller files"
+      case .appleVideoBest: return "Highest available resolution"
+      case .appleVideoEfficient: return "HEVC video, smaller files"
+      case .custom: return nil
+      }
+    }
     var parts = [output.codec, output.container]
     if let quality = output.quality { parts.append(quality) }
     if let bytes = output.estimatedByteCount {
@@ -371,10 +262,10 @@ struct SaveView: View {
     if let album = preview.metadata.album { parts.append(album) }
     if let year = preview.metadata.year { parts.append(String(year)) }
     if let duration = preview.duration, duration.isFinite, duration > 0 {
-      let total = Int(duration.rounded())
+      let total = Int(exactly: duration.rounded()) ?? 0
       parts.append(String(format: "%d:%02d", total / 60, total % 60))
     }
-    parts.append("\(preview.formats.count) formats")
+    parts.append("\(preview.formats.count) \(preview.formats.count == 1 ? "format" : "formats")")
     return parts.joined(separator: " · ")
   }
 

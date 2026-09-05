@@ -69,7 +69,7 @@ Apple Music import is a separate user action after the output file has been veri
 
 ## Implementation boundary
 
-The native client exposes all four policies, acquires tracks locally, inspects the source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and retains its source staging data for retry; it is never labeled as a successful AAC, ALAC, or HEVC output.
+The native client exposes all four policies, acquires tracks locally, inspects the source, selects passthrough or conversion, re-inspects the output, and records the actual decision in job history. Music import remains a separate explicit action. If an installed or beta macOS build does not expose the required Apple encoder, the job fails with a capability message and removes temporary files. Retry acquires fresh input using the job's original settings; an unverified output is never labeled as successful AAC, ALAC, or HEVC media.
 
 Before a notarized public release, the policies still require licensed 720p/1080p/4K SDR golden fixtures, multichannel audio fixtures, clean-machine browser/Music permission testing, and tuning of the Efficient video bounds. HDR fixtures are required before HDR preservation can be claimed.
 

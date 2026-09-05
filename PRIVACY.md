@@ -21,4 +21,4 @@ The sign-in sheet can open Apple's Passwords app. Eucrante does not query, inspe
 
 Downloads and processing remain local. When the user explicitly selects Import to Music, Eucrante asks macOS for Automation permission and sends only the selected verified local audio file to Music; it does not read the Music library.
 
-Local job history is atomically stored with mode `0600`. Use Clear Local History and Finder/Trash actions to remove local records and files. Cancelling stops the job; removing a failed or cancelled job cleans its private staging directory. Clearing history requires confirmation and does not delete downloaded files.
+Local job history is atomically stored with mode `0600`. Each job includes its chosen output settings and local folder bookmark. Version 2 migrates older history into `jobs-v2.json` and retains `jobs-v1.json` as a rollback copy; Clear Local History clears current records, not that retained copy. Use Finder/Trash actions to remove downloaded files. Cancelling waits for the worker to stop and cleans its private staging directory. Clearing history requires confirmation and does not delete downloaded files.

@@ -9,13 +9,14 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     case processing
     case verifying
     case uploading
+    case cancelling
     case completed
     case failed
     case cancelled
 
     public var isActive: Bool {
       switch self {
-      case .queued, .resolving, .downloading, .processing, .verifying, .uploading: true
+      case .queued, .resolving, .downloading, .processing, .verifying, .uploading, .cancelling: true
       case .awaitingSelection, .completed, .failed, .cancelled: false
       }
     }
@@ -29,6 +30,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
       case .processing: "Optimizing for Apple devices"
       case .verifying: "Checking the finished file"
       case .uploading: "Finishing"
+      case .cancelling: "Cancelling"
       case .completed: "Completed"
       case .failed: "Failed"
       case .cancelled: "Cancelled"
@@ -39,6 +41,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
   public let id: UUID
   public let sourceURL: URL
   public let preset: EucrantePreset
+  public var request: SaveRequest?
   public var state: State
   public var progress: Double?
   public var bytesCompleted: Int64?
@@ -59,6 +62,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     id: UUID = UUID(),
     sourceURL: URL,
     preset: EucrantePreset,
+    request: SaveRequest? = nil,
     state: State = .queued,
     progress: Double? = nil,
     bytesCompleted: Int64? = nil,
@@ -78,6 +82,7 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
     self.id = id
     self.sourceURL = sourceURL
     self.preset = preset
+    self.request = request
     self.state = state
     self.progress = progress
     self.bytesCompleted = bytesCompleted
@@ -97,13 +102,31 @@ public struct PersistentJob: Codable, Equatable, Identifiable, Sendable {
 
   public var outputURL: URL? { outputPath.map(URL.init(fileURLWithPath:)) }
   public var sourceHost: String { sourceURL.host() ?? "Unknown source" }
+  public var canRetry: Bool { state == .failed || state == .cancelled }
+  public var isAudio: Bool {
+    preset.isAudio || (preset == .custom && request?.preferences.downloadMode == .audio)
+  }
+  public var displayTitle: String { filename ?? mediaMetadata?.title ?? sourceHost }
+}
+
+public struct SaveRequest: Codable, Equatable, Sendable {
+  public let preferences: DownloadPreferences
+  public let destination: URL
+  public let destinationBookmark: Data?
+
+  public init(preferences: DownloadPreferences, destination: URL, destinationBookmark: Data? = nil)
+  {
+    self.preferences = preferences
+    self.destination = destination
+    self.destinationBookmark = destinationBookmark
+  }
 }
 
 public struct JobLibrarySnapshot: Codable, Equatable, Sendable {
   public var schemaVersion: Int
   public var jobs: [PersistentJob]
 
-  public init(schemaVersion: Int = 1, jobs: [PersistentJob] = []) {
+  public init(schemaVersion: Int = JobStore.currentSchemaVersion, jobs: [PersistentJob] = []) {
     self.schemaVersion = schemaVersion
     self.jobs = jobs
   }

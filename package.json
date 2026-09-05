@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "npm run test:cloudflare",
+    "build": "node Scripts/build-site.mjs && npm run test:cloudflare",
     "deploy": "npm run build && wrangler deploy",
     "test:cloudflare": "node Scripts/check-cloudflare-site.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.1",
     "wrangler": "4.127.1"
   },
   "allowScripts": {

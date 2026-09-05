@@ -84,7 +84,6 @@ final class EucranteAppTests: XCTestCase {
     for job in model.jobs {
       render(JobRow(model: model, job: job))
     }
-    render(EmptyView().eucranteCard())
     _ = Color.eucranteAccent
 
     let previewModel = AppModel(
@@ -378,6 +377,7 @@ final class EucranteAppTests: XCTestCase {
     let model = AppModel(
       defaults: defaults,
       localAcquirer: BlockingAcquirer(),
+      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
       jobStore: store
     )
     for _ in 0..<100 where !model.localToolsReady {
@@ -411,7 +411,8 @@ final class EucranteAppTests: XCTestCase {
     XCTAssertTrue(model.musicMetadataDraft.isEmpty)
     XCTAssertEqual(try store.load().first?.id, job.id)
     model.cancel(job.id)
-    XCTAssertEqual(try store.load().first?.state, .cancelled)
+    XCTAssertEqual(try store.load().first?.state, .cancelling)
+    try await waitUntil { model.jobs.first?.state == .cancelled }
     model.removeFromHistory(job.id)
     XCTAssertTrue(try store.load().isEmpty)
   }
@@ -547,9 +548,31 @@ final class EucranteAppTests: XCTestCase {
         || transcodeModel.jobs.first?.state == .failed
     }
     let transcodeJob = try XCTUnwrap(transcodeModel.jobs.first)
-    XCTAssertEqual(transcodeJob.state, .completed, transcodeJob.errorMessage ?? "")
-    XCTAssertEqual(transcodeJob.mediaDecision, .transcodeHEVC)
-    XCTAssertEqual(transcodeJob.progress, 1)
+    XCTAssertEqual(transcodeJob.state, .failed)
+    XCTAssertTrue(transcodeJob.errorMessage?.contains("HEVC") == true)
+    XCTAssertNil(transcodeJob.outputURL)
+
+    let hevc = try await LocalMediaProcessor().process(
+      video, preset: .appleVideoEfficient, suggestedFilename: "HEVC.mp4",
+      destination: root.appendingPathComponent("hevc-fixture"))
+    let verifiedSuite = "app.eucrante.verified-transcode.\(UUID().uuidString)"
+    defer { UserDefaults.standard.removePersistentDomain(forName: verifiedSuite) }
+    let verifiedModel = try branchModel(
+      root: root.appendingPathComponent("verified-transcode"),
+      acquirer: StaticResultAcquirer(
+        result: .transcode(
+          video: hevc.url, audio: nil, suggestedFilename: "Verified.mp4",
+          duration: hevc.output.duration, quality: .best, metadata: metadata)),
+      suiteName: verifiedSuite, videoTranscoder: AppleVideoTranscoder(executable: script))
+    try await waitUntil { verifiedModel.localToolsReady }
+    verifiedModel.sourceText = "https://example.com/verified-transcode"
+    await verifiedModel.submit(preset: .appleVideoBest)
+    try await waitUntil {
+      verifiedModel.jobs.first?.state == .completed || verifiedModel.jobs.first?.state == .failed
+    }
+    XCTAssertEqual(
+      verifiedModel.jobs.first?.state, .completed, verifiedModel.jobs.first?.errorMessage ?? "")
+    XCTAssertEqual(verifiedModel.jobs.first?.mediaDecision, .transcodeHEVC)
 
     let failureModel = try branchModel(
       root: root.appendingPathComponent("failure", isDirectory: true),
@@ -578,7 +601,8 @@ final class EucranteAppTests: XCTestCase {
     await passthroughModel.submit(preset: .custom)
     try await waitUntil { passthroughModel.jobs.first?.state == .completed }
     XCTAssertEqual(passthroughModel.jobs.first?.mediaDecision, .passthrough)
-    XCTAssertEqual(passthroughModel.jobs.first?.outputURL, video)
+    XCTAssertEqual(passthroughModel.jobs.first?.outputURL?.lastPathComponent, "Original.mp4")
+    XCTAssertNotEqual(passthroughModel.jobs.first?.outputURL, video)
 
     let cancellationModel = try branchModel(
       root: root.appendingPathComponent("cancellation", isDirectory: true),
@@ -772,6 +796,10 @@ final class EucranteAppTests: XCTestCase {
   private func render<V: View>(_ view: V) {
     let size = NSSize(width: 1_280, height: 800)
     let hostingView = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+    let window = NSWindow(
+      contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .resizable],
+      backing: .buffered, defer: false)
+    window.contentView = hostingView
     hostingView.frame = NSRect(origin: .zero, size: size)
     hostingView.layoutSubtreeIfNeeded()
     hostingView.displayIfNeeded()
@@ -996,7 +1024,11 @@ private final class TestYouTubeSessionStore: YouTubeSessionStoring {
 
   func hasAuthenticatedSession() async -> Bool { authenticated }
 
-  func exportCookieFile(to _: URL) async throws -> URL? { nil }
+  func exportCookieFile(to directory: URL) async throws -> URL? {
+    guard authenticated else { return nil }
+    return try SecureCredentialFile.write(
+      Data("# Test session".utf8), named: ".eucrante-youtube-cookies.txt", to: directory)
+  }
 
   func clear() async {
     authenticated = false

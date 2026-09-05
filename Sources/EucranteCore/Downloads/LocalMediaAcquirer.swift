@@ -98,7 +98,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       }
 
       return ToolPaths(
-        ytDLP: executable("EUCRANTE_YTDLP_PATH", name: "yt-dlp"),
+        ytDLP: executable("EUCRANTE_YTDLP_PATH", name: "downloader/yt-dlp"),
         deno: executable("EUCRANTE_DENO_PATH", name: "deno"),
         ffmpeg: executable("EUCRANTE_FFMPEG_PATH", name: "ffmpeg")
       )
@@ -210,14 +210,12 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
     if audioOnly {
       let run = try await download(
         sourceURL: sourceURL,
-        kind: .audio(maximumBitrate: preset == .appleMusicEfficient ? 256 : nil),
-        prefix: "audio",
+        kinds: [.audio(maximumBitrate: preset == .appleMusicEfficient ? 256 : nil)],
         cookieFile: cookieFile,
         videoQuality: preferences.videoQuality,
         workingDirectory: workingDirectory,
-        progressScale: 0...1,
         progress: progress
-      )
+      )[0]
       return .single(
         url: run.url,
         suggestedFilename: preferences.filenameStyle.filename(
@@ -230,16 +228,16 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       )
     }
 
-    let video = try await download(
+    let runs = try await download(
       sourceURL: sourceURL,
-      kind: .video,
-      prefix: "video",
+      kinds: mute
+        ? [.video] : [.video, .audio(maximumBitrate: preset == .appleVideoEfficient ? 256 : nil)],
       cookieFile: cookieFile,
       videoQuality: preferences.videoQuality,
       workingDirectory: workingDirectory,
-      progressScale: mute ? 0...1 : 0...0.5,
       progress: progress
     )
+    let video = runs[0]
     if mute {
       if video.requiresHEVCTranscode {
         return .transcode(
@@ -268,16 +266,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       )
     }
 
-    let audio = try await download(
-      sourceURL: sourceURL,
-      kind: .audio(maximumBitrate: preset == .appleVideoEfficient ? 256 : nil),
-      prefix: "audio",
-      cookieFile: cookieFile,
-      videoQuality: preferences.videoQuality,
-      workingDirectory: workingDirectory,
-      progressScale: 0.5...1,
-      progress: progress
-    )
+    let audio = runs[1]
     let filename = preferences.filenameStyle.filename(
       title: video.title,
       creator: video.creator,
@@ -316,7 +305,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       "--no-playlist",
       "--no-warnings",
       "--skip-download",
-      "--dump-single-json",
+      "--print", Self.previewTemplate,
       "--js-runtimes", "deno:\(tools.deno.path)",
     ]
     if let cookieFile {
@@ -339,6 +328,12 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
     }
     return document.preview(sourceURL: sourceURL)
   }
+
+  // Print only the fields used by the UI. Signed media URLs, fragment lists, subtitles,
+  // and provider response bodies never need to cross the helper pipe or enter Swift memory.
+  static let previewTemplate =
+    "{\"metadata\":%(.{id,title,track,artist,creator,uploader,channel,album,album_artist,composer,genre,description,release_date,release_year,upload_date,track_number,track_count,disc_number,disc_count,thumbnail,duration})j,"
+    + "\"formats\":%(formats.:.{format_id,ext,vcodec,acodec,width,height,fps,tbr,abr,filesize,filesize_approx})j}"
 
   private enum DownloadKind {
     case video
@@ -388,24 +383,26 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
 
   private func download(
     sourceURL: URL,
-    kind: DownloadKind,
-    prefix: String,
+    kinds: [DownloadKind],
     cookieFile: URL?,
     videoQuality: VideoQuality,
     workingDirectory: URL,
-    progressScale: ClosedRange<Double>,
     progress: @escaping @Sendable (LocalAcquisitionProgress) -> Void
-  ) async throws -> DownloadRun {
+  ) async throws -> [DownloadRun] {
     try Task.checkCancellation()
     var arguments = [
       "--ignore-config",
       "--no-playlist",
       "--newline",
       "--progress",
+      "--progress-delta", "0.25",
       "--continue",
       "--js-runtimes", "deno:\(tools.deno.path)",
-      "--format", kind.formatSelector(videoQuality: videoQuality),
-      "--output", workingDirectory.appendingPathComponent("\(prefix).%(ext)s").path,
+      // Comma selection downloads separate tracks using one extraction and helper launch.
+      "--format",
+      kinds.map { "(\($0.formatSelector(videoQuality: videoQuality)))" }.joined(separator: ","),
+      "--output", workingDirectory.appendingPathComponent("media-%(autonumber)02d.%(ext)s").path,
+      "--print", "before_dl:EUCRANTE_BEGIN:%(autonumber)d",
       "--print", "before_dl:EUCRANTE_TITLE:%(title|)j",
       "--print", "before_dl:EUCRANTE_TRACK:%(track|)j",
       "--print", "before_dl:EUCRANTE_ARTIST:%(artist,creator,uploader|)j",
@@ -425,6 +422,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       "--print", "before_dl:EUCRANTE_ID:%(id|)j",
       "--print", "before_dl:EUCRANTE_VCODEC:%(vcodec|)j",
       "--print", "before_dl:EUCRANTE_DURATION:%(duration|)j",
+      "--print", "after_move:EUCRANTE_END:%(autonumber)d",
       "--progress-template",
       "download:EUCRANTE_PROGRESS:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.total_bytes_estimate)s",
     ]
@@ -433,7 +431,7 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
     }
     arguments.append(sourceURL.absoluteString)
 
-    let metadata = LockedMetadata()
+    let records = LockedDownloadRecords()
     try LocalProcessRunner.prepareRestrictedEnvironment(
       homeDirectory: workingDirectory, fileManager: fileManager)
     let environment = LocalProcessRunner.restrictedEnvironment(homeDirectory: workingDirectory)
@@ -442,20 +440,31 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
       arguments: arguments,
       environment: environment
     ) { line in
-      if metadata.consume(line) {
-        return
-      } else if let parsed = Self.parseProgress(line) {
-        let lower = progressScale.lowerBound
-        let width = progressScale.upperBound - lower
+      if let parsed = Self.parseProgress(line) {
+        let lower = Double(records.values.count) / Double(kinds.count)
+        let width = 1 / Double(kinds.count)
         progress(
           LocalAcquisitionProgress(
             fraction: parsed.fraction.map { lower + ($0 * width) },
             bytesCompleted: parsed.completed,
             bytesExpected: parsed.expected
           ))
+      } else {
+        records.consume(line)
       }
     }
+    let values = records.values
+    guard values.count == kinds.count else { throw LocalAcquisitionError.outputMissing }
+    return try values.enumerated().map { index, metadata in
+      try downloadRun(
+        values: metadata, prefix: String(format: "media-%02d", index + 1),
+        sourceURL: sourceURL, workingDirectory: workingDirectory)
+    }
+  }
 
+  private func downloadRun(
+    values: LockedMetadata.Values, prefix: String, sourceURL: URL, workingDirectory: URL
+  ) throws -> DownloadRun {
     guard
       let output = try Self.outputFile(
         prefix: prefix,
@@ -465,7 +474,6 @@ public actor LocalMediaAcquirer: LocalMediaAcquiring, LocalMediaPreviewing {
     else {
       throw LocalAcquisitionError.outputMissing
     }
-    let values = metadata.values
     let displayTitle = values.track ?? values.title
     let title = FilenameSanitizer.sanitize(displayTitle ?? sourceURL.host() ?? "Media")
     let artist = values.artist ?? values.creator
@@ -568,6 +576,7 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
   case formatUnavailable
   case outputMissing
   case previewUnavailable
+  case outputTooLarge
 
   public var errorDescription: String? {
     switch self {
@@ -585,11 +594,22 @@ public enum LocalAcquisitionError: LocalizedError, Equatable, Sendable {
       "The provider returned no usable media file."
     case .previewUnavailable:
       "Eucrante could not read preview details for this link. You can still try saving it."
+    case .outputTooLarge:
+      "The provider returned more metadata than Eucrante can safely process. Try a link to a single item."
     }
   }
 }
 
 private struct PreviewDocument: Decodable {
+  let metadata: PreviewMetadataDocument
+  let formats: [PreviewFormatDocument]
+
+  func preview(sourceURL: URL) -> MediaPreview {
+    metadata.preview(sourceURL: sourceURL, formats: formats)
+  }
+}
+
+private struct PreviewMetadataDocument: Decodable {
   let id: String?
   let title: String?
   let track: String?
@@ -611,11 +631,10 @@ private struct PreviewDocument: Decodable {
   let description: String?
   let thumbnail: String?
   let duration: Double?
-  let formats: [PreviewFormatDocument]
 
   enum CodingKeys: String, CodingKey {
     case id, title, track, artist, creator, uploader, channel, album, composer, genre, description
-    case thumbnail, duration, formats
+    case thumbnail, duration
     case albumArtist = "album_artist"
     case releaseDate = "release_date"
     case releaseYear = "release_year"
@@ -626,7 +645,7 @@ private struct PreviewDocument: Decodable {
     case discCount = "disc_count"
   }
 
-  func preview(sourceURL: URL) -> MediaPreview {
+  func preview(sourceURL: URL, formats: [PreviewFormatDocument]) -> MediaPreview {
     let resolvedArtist = artist ?? creator ?? uploader ?? channel
     let year =
       releaseYear ?? releaseDate.flatMap { Int($0.prefix(4)) }
@@ -694,6 +713,27 @@ private struct PreviewFormatDocument: Decodable {
       fileSize: fileSize,
       approximateFileSize: approximateFileSize
     )
+  }
+}
+
+private final class LockedDownloadRecords: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current = LockedMetadata()
+  private var completed: [LockedMetadata.Values] = []
+
+  var values: [LockedMetadata.Values] { lock.withLock { completed } }
+
+  func consume(_ line: String) {
+    lock.withLock {
+      if line.hasPrefix("EUCRANTE_BEGIN:") {
+        current = LockedMetadata()
+      } else if line.hasPrefix("EUCRANTE_END:") {
+        // A save selects at most two tracks, even if a helper produces unexpected output.
+        if completed.count < 3 { completed.append(current.values) }
+      } else {
+        _ = current.consume(line)
+      }
+    }
   }
 }
 
@@ -782,7 +822,9 @@ private final class LockedMetadata: @unchecked Sendable {
       ("EUCRANTE_DISC_COUNT:", { self.discCount = $0 }),
     ]
     for (prefix, setter) in integers where line.hasPrefix(prefix) {
-      let value = Self.decodeNumber(String(line.dropFirst(prefix.count))).map(Int.init)
+      let value = Self.decodeNumber(String(line.dropFirst(prefix.count))).flatMap {
+        Int(exactly: $0)
+      }
       lock.withLock { setter(value) }
       return true
     }

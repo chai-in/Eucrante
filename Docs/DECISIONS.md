@@ -10,7 +10,7 @@ Eucrante has no Worker, server, container, R2 bucket, localhost process, or rela
 
 ## ADR-003: Local extractor boundary
 
-Use the official `yt-dlp_macos` release behind the narrow `LocalMediaAcquiring` protocol. Do not copy an upstream web client/server or interpolate input into a shell. Pin and verify every bundled artifact.
+Use the official `yt-dlp_macos.zip` onedir release behind the narrow `LocalMediaAcquiring` protocol. Verify the pinned archive before removing unused Intel slices and restoring identical framework aliases. Keep the Python runtime inside the signed bundle so launches do not unpack executable code into temporary storage. Do not copy an upstream web client/server or interpolate input into a shell. Pin and verify every bundled artifact.
 
 ## ADR-004: Opt-in app-owned YouTube session
 

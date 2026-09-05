@@ -214,9 +214,14 @@ if [[ "$mode" != "development" ]]; then
   plutil -insert notarization.requestID -string "$notary_request_id" "$provenance_path"
   plutil -insert tools -dictionary "$provenance_path"
   for tool in yt-dlp deno ffmpeg; do
-    digest="$(shasum -a 256 "$app_path/Contents/Resources/Tools/$tool" | awk '{print $1}')"
+    tool_path="$app_path/Contents/Resources/Tools/$tool"
+    if [[ "$tool" == "yt-dlp" ]]; then tool_path="$app_path/Contents/Resources/Tools/downloader/yt-dlp"; fi
+    digest="$(shasum -a 256 "$tool_path" | awk '{print $1}')"
     plutil -insert "tools.$tool" -string "$digest" "$provenance_path"
   done
+  downloader_digest="$(python3 "$project_root/Scripts/prepare-downloader.py" fingerprint \
+    "$app_path/Contents/Resources/Tools/downloader")"
+  plutil -insert tools.downloaderPayload -string "$downloader_digest" "$provenance_path"
   plutil -convert json "$provenance_path"
 
   mv "$output_path" "$final_output_path"

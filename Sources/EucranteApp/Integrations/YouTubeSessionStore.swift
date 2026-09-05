@@ -4,14 +4,20 @@ import EucranteCore
 
 @MainActor
 protocol YouTubeSessionStoring: AnyObject {
+  var websiteDataStore: WKWebsiteDataStore? { get }
   func hasAuthenticatedSession() async -> Bool
   func exportCookieFile(to directory: URL) async throws -> URL?
   func clear() async
 }
 
+extension YouTubeSessionStoring {
+  var websiteDataStore: WKWebsiteDataStore? { nil }
+}
+
 @MainActor
 final class YouTubeSessionStore: YouTubeSessionStoring {
   private let dataStore: WKWebsiteDataStore
+  var websiteDataStore: WKWebsiteDataStore? { dataStore }
 
   init(dataStore: WKWebsiteDataStore = .default()) {
     self.dataStore = dataStore
@@ -24,11 +30,15 @@ final class YouTubeSessionStore: YouTubeSessionStoring {
     ]
     return await cookies().contains { cookie in
       Self.isYouTube(cookie.domain) && authenticatedNames.contains(cookie.name)
+        && (cookie.expiresDate.map { $0 > .now } ?? true)
     }
   }
 
   func exportCookieFile(to directory: URL) async throws -> URL? {
-    let eligible = await cookies().filter { Self.isYouTube($0.domain) }
+    let eligible = await cookies().filter {
+      Self.isYouTube($0.domain) && ($0.expiresDate.map { $0 > .now } ?? true)
+    }
+    try Task.checkCancellation()
     guard !eligible.isEmpty else { return nil }
 
     var lines = [

@@ -1,21 +1,35 @@
 import SwiftUI
 
+#if !arch(arm64)
+  #error("Eucrante supports Apple silicon only. Build for arm64.")
+#endif
+
 @main
 @MainActor
 struct EucranteApp: App {
   @StateObject private var model: AppModel
 
   init() {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
+        do {
+          let preview = try PreviewFixture.makeModel()
+          _model = StateObject(wrappedValue: preview)
+          return
+        } catch { fatalError("Unable to create isolated UI preview: \(error)") }
+      }
+    #endif
     _model = StateObject(wrappedValue: AppModel())
   }
 
   var body: some Scene {
-    WindowGroup {
+    Window("Eucrante", id: "main") {
       AppShellView(model: model)
-        .frame(minWidth: 680, minHeight: 460)
+        .navigationSubtitle(previewSubtitle)
+        .frame(minWidth: 720, minHeight: 520)
         .onOpenURL { model.handleIncomingURL($0) }
     }
-    .defaultSize(width: 820, height: 560)
+    .defaultSize(width: 880, height: 640)
     .commands {
       CommandMenu("Save") {
         Button("Save Link") {
@@ -35,5 +49,13 @@ struct EucranteApp: App {
       SettingsView(model: model)
         .frame(width: 600, height: 500)
     }
+  }
+
+  private var previewSubtitle: String {
+    #if DEBUG
+      return ProcessInfo.processInfo.arguments.contains("--ui-preview") ? "UI Preview" : ""
+    #else
+      return ""
+    #endif
   }
 }

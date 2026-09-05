@@ -4,6 +4,8 @@ Eucrante should feel like a normal Mac utility: paste, choose an output, and sav
 
 ## Principles
 
+Eucrante supports Apple silicon Macs running macOS 14 or newer.
+
 1. One app and one visible workflow.
 2. Provider traffic and optional browser authentication stay on the user's Mac.
 3. Apple-oriented defaults explain quality and storage tradeoffs in plain language.
@@ -23,6 +25,14 @@ Eucrante should feel like a normal Mac utility: paste, choose an output, and sav
 Preview probes use the same bundled downloader and private YouTube session as the final save. They are debounced, cancelled when the link changes, and never routed through a Eucrante service. A tilde marks output size that must be estimated because the provider omitted a byte count or Eucrante will convert the selected stream.
 
 For Music presets, provider title, artist, album fields, and artwork are captured automatically. Source album artwork is used when exposed; otherwise the best available thumbnail becomes the cover. Optional manual values override only the fields the user supplied. Chosen and provider artwork is normalized and retained in Eucrante's private app data until the job is removed from history. Importing into Music sets library metadata and artwork without changing or re-encoding the downloaded audio.
+
+## Queue and file ownership
+
+Saves run in first-in, first-out order, up to the configured concurrency limit. Pausing holds waiting jobs while running jobs finish. A save records its preferences and output-folder bookmark when submitted; changing Settings does not change queued or retried saves. Cancellation remains active until its worker exits, and delayed progress from an earlier attempt cannot alter a retry or completed job.
+
+Conversion and verification happen in a private temporary folder beside the destination. Only a verified, playable file is moved into its final name, without replacing existing files. Once that move succeeds, completion wins a simultaneous cancellation so the queue accurately reports the retained file.
+
+History migrates from `jobs-v1.json` into `jobs-v2.json`, retaining the original v1 file for rollback. Newer unknown schemas are never overwritten. The v2 snapshot includes immutable save settings and the cancelling state. Clearing history removes the current history and cached artwork, not downloaded files or the retained migration copy.
 
 ## YouTube Premium
 

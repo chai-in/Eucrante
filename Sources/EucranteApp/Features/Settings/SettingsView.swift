@@ -2,6 +2,7 @@ import EucranteCore
 import SwiftUI
 
 struct SettingsView: View {
+  @Environment(\.openWindow) private var openWindow
   @ObservedObject var model: AppModel
   @State private var showingClearHistoryConfirmation = false
 
@@ -9,12 +10,8 @@ struct SettingsView: View {
     TabView {
       general
         .tabItem { Label("General", systemImage: "gear") }
-      video
-        .tabItem { Label("Video", systemImage: "video") }
-      audio
-        .tabItem { Label("Audio", systemImage: "waveform") }
-      metadata
-        .tabItem { Label("Metadata", systemImage: "tag") }
+      output
+        .tabItem { Label("Output", systemImage: "slider.horizontal.3") }
       localMedia
         .tabItem { Label("YouTube", systemImage: "play.rectangle") }
       privacy
@@ -33,31 +30,15 @@ struct SettingsView: View {
     }
   }
 
-  private var video: some View {
+  private var output: some View {
     Form {
-      Section("Defaults") {
-        Picker("Quality", selection: $model.preferences.videoQuality) {
+      Section("Custom video") {
+        Picker("Default quality", selection: $model.preferences.videoQuality) {
           ForEach(VideoQuality.allCases) { quality in
             Text(quality.displayName).tag(quality)
           }
         }
       }
-    }
-    .formStyle(.grouped)
-  }
-
-  private var audio: some View {
-    Form {
-      Section("Apple audio") {
-        Label("Best available AAC/M4A", systemImage: "waveform")
-        Label("Apple Lossless when the source supports it", systemImage: "music.note")
-      }
-    }
-    .formStyle(.grouped)
-  }
-
-  private var metadata: some View {
-    Form {
       Section("Filenames") {
         Picker("Filename style", selection: $model.preferences.filenameStyle) {
           ForEach(FilenameStyle.allCases) { style in
@@ -106,11 +87,12 @@ struct SettingsView: View {
     Form {
       Section("Local media engine") {
         Label(
-          model.localToolsMessage,
+          model.localToolsReady ? "Media tools ready" : model.localToolsMessage,
           systemImage: model.localToolsReady
             ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
         )
         .foregroundStyle(model.localToolsReady ? Color.green : Color.orange)
+        .help(model.localToolsMessage)
         HStack {
           Button {
             Task { await model.refreshLocalToolStatus() }
@@ -122,6 +104,7 @@ struct SettingsView: View {
             }
           }
           .disabled(model.isCheckingLocalTools)
+          .frame(minWidth: 100)
           Button("Export Diagnostics…") { model.exportDiagnostics() }
         }
       }
@@ -134,6 +117,7 @@ struct SettingsView: View {
         )
         HStack {
           Button(model.youtubeSessionReady ? "Manage YouTube Session…" : "Sign In to YouTube…") {
+            openWindow(id: "main")
             model.openYouTubeSignIn()
           }
           if model.youtubeSessionReady {
@@ -145,9 +129,6 @@ struct SettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .sheet(isPresented: $model.showingYouTubeSignIn) {
-      YouTubeSignInView(model: model)
-    }
   }
 
   private var privacy: some View {

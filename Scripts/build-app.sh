@@ -5,7 +5,16 @@ set -euo pipefail
 project_root="${0:A:h:h}"
 configuration="${1:-release}"
 app_name="Eucrante"
-app_bundle="$project_root/dist/$app_name.app"
+mkdir -p "$project_root/dist"
+build_directory="$(mktemp -d "$project_root/dist/.app-build.XXXXXX")"
+cleanup() {
+    if [[ -d "$build_directory/Previous.app" && ! -d "$project_root/dist/$app_name.app" ]]; then
+        mv "$build_directory/Previous.app" "$project_root/dist/$app_name.app" || return
+    fi
+    find "$build_directory" -depth -delete 2>/dev/null || true
+}
+trap cleanup EXIT
+app_bundle="$build_directory/$app_name.app"
 contents="$app_bundle/Contents"
 entitlements="$project_root/App/Eucrante.entitlements"
 deno_entitlements="$project_root/App/Deno.entitlements"
@@ -26,15 +35,16 @@ swift_debug_args=()
 if [[ "${EUCRANTE_SKIP_DEBUG_SYMBOLS:-0}" == "1" ]]; then
     swift_debug_args+=(-debug-info-format none)
 fi
-swift build "${swift_sandbox_args[@]}" "${swift_debug_args[@]}" --configuration "$configuration" --product "$app_name"
-binary_directory="$(swift build "${swift_sandbox_args[@]}" "${swift_debug_args[@]}" --configuration "$configuration" --show-bin-path)"
+swift build "${swift_sandbox_args[@]}" "${swift_debug_args[@]}" --arch arm64 --configuration "$configuration" --product "$app_name"
+binary_directory="$(swift build "${swift_sandbox_args[@]}" "${swift_debug_args[@]}" --arch arm64 --configuration "$configuration" --show-bin-path)"
 
 rm -rf "$app_bundle"
 mkdir -p "$contents/MacOS" "$contents/Resources"
 ditto "$binary_directory/$app_name" "$contents/MacOS/$app_name"
 ditto "$project_root/App/Info.plist" "$contents/Info.plist"
 mkdir -p "$contents/Resources/Tools"
-ditto "$project_root/.build/eucrante-tools/yt-dlp" "$contents/Resources/Tools/yt-dlp"
+ditto "$project_root/.build/eucrante-tools/downloader" "$contents/Resources/Tools/downloader"
+rm "$contents/Resources/Tools/downloader/manifest.json"
 ditto "$project_root/.build/eucrante-tools/deno" "$contents/Resources/Tools/deno"
 ditto "$project_root/.build/eucrante-tools/ffmpeg" "$contents/Resources/Tools/ffmpeg"
 ditto "$project_root/ThirdParty" "$contents/Resources/Licenses"
@@ -44,13 +54,22 @@ ditto "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NO
 "$project_root/Scripts/build-icon.sh" "$contents/Resources/Eucrante.icns"
 
 signing_identity="${CODESIGN_IDENTITY:--}"
+# Sign actual Mach-O files before their framework and launcher. Never follow framework aliases.
+signing_options=(--force --options runtime --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then signing_options+=(--timestamp); fi
+while IFS= read -r -d '' library; do
+    if [[ "$(file -b "$library")" == *Mach-O* ]]; then
+        codesign "${signing_options[@]}" "$library"
+    fi
+done < <(find "$contents/Resources/Tools/downloader/_internal" -type f -print0)
+codesign "${signing_options[@]}" "$contents/Resources/Tools/downloader/_internal/Python.framework"
 if [[ "$signing_identity" == "-" ]]; then
-    codesign --force --options runtime --sign - --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/yt-dlp"
+    codesign --force --options runtime --sign - --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/downloader/yt-dlp"
     codesign --force --options runtime --sign - --entitlements "$deno_entitlements" "$contents/Resources/Tools/deno"
     codesign --force --options runtime --sign - "$contents/Resources/Tools/ffmpeg"
     codesign --force --options runtime --sign - --entitlements "$entitlements" "$app_bundle"
 else
-    codesign --force --options runtime --timestamp --sign "$signing_identity" --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/yt-dlp"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" --entitlements "$yt_dlp_entitlements" "$contents/Resources/Tools/downloader/yt-dlp"
     codesign --force --options runtime --timestamp --sign "$signing_identity" --entitlements "$deno_entitlements" "$contents/Resources/Tools/deno"
     codesign --force --options runtime --timestamp --sign "$signing_identity" "$contents/Resources/Tools/ffmpeg"
     codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$signing_identity" "$app_bundle"
@@ -59,3 +78,8 @@ fi
 "$project_root/Scripts/verify-app.sh" "$app_bundle"
 codesign --display --entitlements - "$app_bundle"
 echo "Built $app_bundle"
+if [[ -d "$project_root/dist/$app_name.app" ]]; then
+    mv "$project_root/dist/$app_name.app" "$build_directory/Previous.app"
+fi
+mv "$app_bundle" "$project_root/dist/$app_name.app"
+echo "Verified app available at $project_root/dist/$app_name.app"

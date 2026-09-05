@@ -11,6 +11,9 @@ Eucrante uses native SwiftUI controls, system materials, semantic colors, keyboa
 - Keep the optional Music metadata editor collapsed beneath the preset grid. After preview resolves, empty controls show the exact automatic source values and artwork that will be imported; unavailable values read `Auto — None fetched`, and typed values remain explicit overrides. It may override title, artist, album, album artist, composer, genre, year, track, disc, and artwork without making one-click saves wait for a separate screen.
 - Custom controls remain collapsed until requested.
 - The output folder is always visible.
+- The save surface is an unframed native layout; preset buttons have stable dimensions and factual quality labels.
+- Queue provides search, All/In Progress/Saved/Needs Attention filters, pause/resume, and visible open, Finder, Music import, retry, and overflow actions.
+- Cancelled workers show Cancelling until they exit. Missing local files are distinguished from available saved files.
 - Starting an output reveals a persistent bottom shelf with the active preset, phase, progress, Queue, and Cancel controls; completion leaves a concise saved-file confirmation.
 - No Eucrante account, hosted server, endpoint, or infrastructure concepts appear in the UI; optional provider sign-in remains explicit.
 

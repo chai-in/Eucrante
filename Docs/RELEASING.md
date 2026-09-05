@@ -4,9 +4,9 @@ Eucrante supports two explicit binary paths. Public previews may use a clearly l
 
 ## Architecture policy
 
-`make app` produces a native bundle for the build Mac. The app executable, Deno, and the restricted FFmpeg build are single-architecture; the bundle verifier requires every helper to support the app architecture. The pinned yt-dlp helper is universal. Release filenames declare their architecture, for example `Eucrante-0.1.0-1-macOS-arm64.zip`.
+`make app` produces an Apple silicon (arm64) bundle. The compiler, installer, and bundle verifier reject Intel app builds; every packaged native helper and Python library must be arm64-only. The pinned upstream yt-dlp onedir ZIP is verified before `lipo` removes Intel slices and byte-verified Python.framework aliases are restored as relative symlinks. All Python bytecode, extractors, dependency data, and licenses are retained. The launcher, native libraries, framework, and outer app are signed in that order. Release provenance includes both the launcher checksum and a digest covering the complete downloader payload and relative links. Release filenames declare arm64, for example `Eucrante-0.1.0-1-macOS-arm64.zip`.
 
-The source and helper installer support Apple Silicon and Intel builds, but the project does not claim a universal artifact until both Deno and FFmpeg slices are assembled and tested together. Release notes must list the architecture of every attached archive.
+Builds require native execution on Apple silicon, outside Rosetta. The app requires macOS 14 or newer. A failed build or bundle audit leaves the previous app bundle in place.
 
 ## Prepare
 

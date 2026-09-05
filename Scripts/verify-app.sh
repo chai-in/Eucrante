@@ -18,7 +18,8 @@ fail() {
 required_files=(
   "$contents/Info.plist"
   "$contents/MacOS/Eucrante"
-  "$contents/Resources/Tools/yt-dlp"
+  "$contents/Resources/Tools/downloader/yt-dlp"
+  "$contents/Resources/Tools/downloader/_internal/Python.framework/Versions/3.14/Python"
   "$contents/Resources/Tools/deno"
   "$contents/Resources/Tools/ffmpeg"
   "$contents/Resources/Eucrante.icns"
@@ -32,6 +33,25 @@ for file in "${required_files[@]}"; do
   [[ -f "$file" ]] || fail "required file is missing: ${file#$app_path/}"
 done
 
+# Audit the prepared runtime itself, including its non-Mach-O Python modules and aliases.
+downloader="$contents/Resources/Tools/downloader"
+while IFS= read -r -d '' library; do
+  if [[ "$(file -b "$library")" == *Mach-O* ]]; then
+    [[ "$(lipo -archs "$library")" == "arm64" ]] || fail "downloader library is not arm64: ${library:t}"
+    codesign --verify --strict "$library" || fail "invalid downloader library signature"
+    library_entitlements="$(codesign --display --entitlements :- "$library" 2>/dev/null)"
+    [[ -z "$library_entitlements" ]] || fail "downloader library has unexpected entitlements"
+  fi
+done < <(find "$downloader/_internal" -type f -print0)
+codesign --verify --strict "$downloader/_internal/Python.framework"
+[[ -L "$downloader/_internal/Python" \
+  && -L "$downloader/_internal/Python.framework/Python" \
+  && -L "$downloader/_internal/Python.framework/Resources" \
+  && -L "$downloader/_internal/Python.framework/Versions/Current" ]] \
+  || fail "Python framework aliases were duplicated"
+python3 "$project_root/Scripts/prepare-downloader.py" fingerprint "$downloader" >/dev/null \
+  || fail "downloader payload contains a broken or external alias"
+
 plutil -lint "$contents/Info.plist" >/dev/null
 identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents/Info.plist")"
 [[ "$identifier" == "app.eucrante.client" ]] || fail "unexpected bundle identifier: $identifier"
@@ -41,7 +61,7 @@ icon_file="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Inf
 [[ "$icon_file" == "Eucrante.icns" ]] || fail "unexpected app icon declaration: $icon_file"
 
 for executable in \
-  "$contents/Resources/Tools/yt-dlp" \
+  "$contents/Resources/Tools/downloader/yt-dlp" \
   "$contents/Resources/Tools/deno" \
   "$contents/Resources/Tools/ffmpeg"; do
   [[ -x "$executable" ]] || fail "tool is not executable: ${executable:t}"
@@ -68,17 +88,23 @@ deno_allows_jit="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allo
   || fail "Deno could not execute JavaScript under Hardened Runtime"
 
 yt_dlp_entitlements="$temporary_directory/yt-dlp-entitlements.plist"
-codesign --display --entitlements :- "$contents/Resources/Tools/yt-dlp" \
+codesign --display --entitlements :- "$contents/Resources/Tools/downloader/yt-dlp" \
   > "$yt_dlp_entitlements" 2>/dev/null
 plutil -lint "$yt_dlp_entitlements" >/dev/null
 yt_dlp_allows_extracted_python="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.disable-library-validation' "$yt_dlp_entitlements" 2>/dev/null || true)"
 [[ "$yt_dlp_allows_extracted_python" == "true" ]] \
-  || fail "yt-dlp is missing its required extracted-runtime entitlement"
+  || fail "yt-dlp is missing its required Python-runtime entitlement"
 /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.cs.disable-library-validation' "$yt_dlp_entitlements"
 [[ "$(/usr/libexec/PlistBuddy -c Print "$yt_dlp_entitlements")" == $'Dict {\n}' ]] \
   || fail "yt-dlp has an unexpected additional entitlement"
-"$contents/Resources/Tools/yt-dlp" --version >/dev/null \
-  || fail "yt-dlp could not launch its extracted Python runtime under Hardened Runtime"
+mkdir -p "$temporary_directory/downloader-home"
+downloader_version="$(env -i HOME="$temporary_directory/downloader-home" \
+  TMPDIR="$temporary_directory/downloader-home" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  "$contents/Resources/Tools/downloader/yt-dlp" --version)" \
+  || fail "yt-dlp could not launch its bundled Python runtime under Hardened Runtime"
+[[ "$downloader_version" == "2026.07.04" ]] || fail "unexpected downloader version"
+[[ -z "$(find "$temporary_directory/downloader-home" -mindepth 1 -print -quit)" ]] \
+  || fail "downloader launch extracted a temporary runtime"
 
 ffmpeg_entitlements="$temporary_directory/ffmpeg-entitlements.plist"
 codesign --display --entitlements :- "$contents/Resources/Tools/ffmpeg" \
@@ -97,10 +123,13 @@ app_allows_music_automation="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.secu
 
 app_executable="$contents/MacOS/Eucrante"
 app_architectures="$(lipo -archs "$app_executable")"
-[[ -n "$app_architectures" ]] || fail "app executable has no reported architecture"
+[[ "$app_architectures" == "arm64" ]] || fail "Eucrante must be Apple silicon only (arm64)"
+for executable in "$downloader/yt-dlp" "$contents/Resources/Tools/deno" "$contents/Resources/Tools/ffmpeg"; do
+  [[ "$(lipo -archs "$executable")" == "arm64" ]] || fail "${executable:t} must be arm64 only"
+done
 for architecture in ${(z)app_architectures}; do
   for executable in \
-    "$contents/Resources/Tools/yt-dlp" \
+    "$contents/Resources/Tools/downloader/yt-dlp" \
     "$contents/Resources/Tools/deno" \
     "$contents/Resources/Tools/ffmpeg"; do
     lipo "$executable" -verify_arch "$architecture" >/dev/null \

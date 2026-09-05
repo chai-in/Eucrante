@@ -11,10 +11,16 @@ ffmpeg_source_url="https://ffmpeg.org/releases/ffmpeg-$ffmpeg_version.tar.xz"
 ffmpeg_binary="$tools_directory/ffmpeg"
 ffmpeg_stamp="$tools_directory/ffmpeg.sha256"
 
+[[ "$(uname -m)" == "arm64" ]] || {
+  echo "Eucrante's media engine requires a native Apple silicon build." >&2
+  exit 1
+}
+
 mkdir -p "$tools_directory"
 
 verified_cached_binary() {
   [[ -x "$ffmpeg_binary" && -f "$ffmpeg_stamp" ]] || return 1
+  [[ "$(lipo -archs "$ffmpeg_binary")" == "arm64" ]] || return 1
   local expected actual
   expected="$(<"$ffmpeg_stamp")"
   actual="$(shasum -a 256 "$ffmpeg_binary" | awk '{print $1}')"

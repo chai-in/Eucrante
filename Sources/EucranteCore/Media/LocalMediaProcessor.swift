@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import AudioToolbox
 import CoreMedia
+import Darwin
 import Foundation
 
 public struct MediaFileInfo: Codable, Equatable, Sendable {
@@ -80,7 +81,11 @@ public actor LocalMediaProcessor: MediaProcessing {
   }
 
   public func inspect(_ url: URL) async throws -> MediaFileInfo {
-    let asset = AVURLAsset(url: url)
+    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+    return try await inspect(AVURLAsset(url: url), fileSize: size)
+  }
+
+  private func inspect(_ asset: AVAsset, fileSize: Int64) async throws -> MediaFileInfo {
     let duration = try await asset.load(.duration).seconds
     let audioTracks = try await asset.loadTracks(withMediaType: .audio)
     let videoTracks = try await asset.loadTracks(withMediaType: .video)
@@ -104,8 +109,6 @@ public actor LocalMediaProcessor: MediaProcessing {
       } else {
         nil
       }
-    let fileSize =
-      (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
     let audioCodec = audioDescription.map(codecName)
     let videoCodec = videoDescription.map(codecName)
     let audioBitrate: Double? =
@@ -147,14 +150,91 @@ public actor LocalMediaProcessor: MediaProcessing {
     destination: URL,
     progress: @escaping @Sendable (Double) -> Void = { _ in }
   ) async throws -> ProcessedMedia {
+    try Task.checkCancellation()
+    let staging = try makeStaging(in: destination)
+    defer { try? fileManager.removeItem(at: staging) }
+
+    let processed = try await processInStaging(
+      input, preset: preset, suggestedFilename: suggestedFilename,
+      destination: staging, progress: progress)
+    return try publish(processed, to: destination)
+  }
+
+  // Compose acquired tracks directly into the destination's private staging directory.
+  // In particular, Efficient no longer writes a full H.264 merge before encoding HEVC.
+  public func process(
+    video: URL, audio: URL, preset: EucrantePreset, suggestedFilename: String,
+    destination: URL, progress: @escaping @Sendable (Double) -> Void = { _ in }
+  ) async throws -> ProcessedMedia {
+    try Task.checkCancellation()
+    guard !preset.isAudio else { throw MediaProcessingError.unsupportedOutput }
+    let staging = try makeStaging(in: destination)
+    defer { try? fileManager.removeItem(at: staging) }
+    let composition = try await composition(video: video, audio: audio)
+    let size = [video, audio].reduce(Int64(0)) {
+      $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    }
+    let source = try await inspect(composition, fileSize: size)
+    let name = outputName(suggestedFilename, extension: "mp4")
+    let decision = Self.decision(for: URL(fileURLWithPath: name), preset: preset, info: source)
+    let outputURL = try await exportAsset(
+      composition,
+      presetName: decision == .transcodeHEVC
+        ? Self.hevcPreset(for: source) : AVAssetExportPresetPassthrough,
+      fileType: .mp4, filename: name, destination: staging, progress: progress)
+    try Task.checkCancellation()
+    let output = try await inspect(outputURL)
+    try Self.verify(source: source, output: output, preset: preset, decision: decision)
+    guard output.audioCodec != nil, output.videoCodec != nil else {
+      throw MediaProcessingError.verification("The merged output is missing a requested track.")
+    }
+    progress(1)
+    return try publish(
+      ProcessedMedia(url: outputURL, decision: decision, source: source, output: output),
+      to: destination)
+  }
+
+  private func makeStaging(in destination: URL) throws -> URL {
+    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+    let staging = destination.appendingPathComponent(
+      ".eucrante-\(UUID().uuidString)", isDirectory: true)
+    try SecureCredentialFile.prepareDirectory(staging, fileManager: fileManager)
+    return staging
+  }
+
+  private func publish(_ processed: ProcessedMedia, to destination: URL) throws -> ProcessedMedia {
+    try Task.checkCancellation()
+    let output = reserveDestination(for: processed.url.lastPathComponent, in: destination)
+    defer { releaseDestination(output) }
+    // Same-volume publication happens only after verification and never replaces an existing file.
+    do {
+      try fileManager.moveItem(at: processed.url, to: output)
+    } catch {
+      throw MediaProcessingError.file(error.localizedDescription)
+    }
+    return ProcessedMedia(
+      url: output, decision: processed.decision, source: processed.source, output: processed.output)
+  }
+
+  private func processInStaging(
+    _ input: URL,
+    preset: EucrantePreset,
+    suggestedFilename: String?,
+    destination: URL,
+    progress: @escaping @Sendable (Double) -> Void
+  ) async throws -> ProcessedMedia {
     guard preset != .custom else {
       let source = try await inspect(input)
+      try Self.verify(source: source, output: source, preset: .custom, decision: .passthrough)
+      try Task.checkCancellation()
       let outputURL = try copy(
         input,
         named: suggestedFilename ?? input.lastPathComponent,
         to: destination
       )
-      return ProcessedMedia(url: outputURL, decision: .passthrough, source: source, output: source)
+      let output = try await inspect(outputURL)
+      try Self.verify(source: source, output: output, preset: .custom, decision: .passthrough)
+      return ProcessedMedia(url: outputURL, decision: .passthrough, source: source, output: output)
     }
 
     try Task.checkCancellation()
@@ -225,6 +305,18 @@ public actor LocalMediaProcessor: MediaProcessing {
     filename: String,
     workingDirectory: URL
   ) async throws -> URL {
+    let composition = try await composition(video: video, audio: audio)
+    return try await exportAsset(
+      composition,
+      presetName: AVAssetExportPresetPassthrough,
+      fileType: .mp4,
+      filename: outputName(filename, extension: "mp4"),
+      destination: workingDirectory,
+      progress: { _ in }
+    )
+  }
+
+  private func composition(video: URL, audio: URL) async throws -> AVMutableComposition {
     let videoAsset = AVURLAsset(url: video)
     let audioAsset = AVURLAsset(url: audio)
     guard let sourceVideo = try await videoAsset.loadTracks(withMediaType: .video).first,
@@ -259,14 +351,7 @@ public actor LocalMediaProcessor: MediaProcessing {
       at: .zero
     )
     videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
-    return try await exportAsset(
-      composition,
-      presetName: AVAssetExportPresetPassthrough,
-      fileType: .mp4,
-      filename: outputName(filename, extension: "mp4"),
-      destination: workingDirectory,
-      progress: { _ in }
-    )
+    return composition
   }
 
   static func decision(
@@ -317,7 +402,10 @@ public actor LocalMediaProcessor: MediaProcessing {
     let output = reserveDestination(for: safe, in: destination)
     defer { releaseDestination(output) }
     do {
-      try fileManager.copyItem(at: input, to: output)
+      // APFS clones share media blocks until either copy changes. Other volumes use a normal copy.
+      if clonefile(input.path, output.path, 0) != 0 {
+        try fileManager.copyItem(at: input, to: output)
+      }
       return output
     } catch {
       throw MediaProcessingError.file(error.localizedDescription)
@@ -361,6 +449,8 @@ public actor LocalMediaProcessor: MediaProcessing {
       in: destination
     )
     defer { releaseDestination(output) }
+    var completed = false
+    defer { if !completed { try? fileManager.removeItem(at: output) } }
     exporter.outputURL = output
     exporter.outputFileType = fileType
     exporter.shouldOptimizeForNetworkUse = true
@@ -385,6 +475,7 @@ public actor LocalMediaProcessor: MediaProcessing {
       throw MediaProcessingError.export(
         exporter.error?.localizedDescription ?? "Unknown export error")
     }
+    completed = true
     return output
   }
 
@@ -524,7 +615,7 @@ public actor LocalMediaProcessor: MediaProcessing {
       {
         throw MediaProcessingError.verification("The output sample rate exceeds the source.")
       }
-    } else {
+    } else if preset != .custom {
       guard output.videoCodec != nil else {
         throw MediaProcessingError.verification("The output does not contain video.")
       }
@@ -541,6 +632,13 @@ public actor LocalMediaProcessor: MediaProcessing {
       if source.isHDR, decision == .transcodeHEVC, !output.isHDR {
         throw MediaProcessingError.verification("HDR metadata was not preserved.")
       }
+    }
+    guard output.audioCodec != nil || output.videoCodec != nil else {
+      throw MediaProcessingError.verification("The output has no playable media tracks.")
+    }
+    if source.duration > 0, abs(source.duration - output.duration) > max(1, source.duration * 0.02)
+    {
+      throw MediaProcessingError.verification("The output duration does not match the source.")
     }
   }
 

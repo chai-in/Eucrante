@@ -24,13 +24,16 @@ struct YouTubeSignInView: View {
       .frame(height: 46)
 
       Divider()
-      if browserIsVisible {
-        YouTubeWebView()
+      if browserIsVisible, let store = model.youtubeWebsiteDataStore {
+        YouTubeWebView(dataStore: store)
+      } else if browserIsVisible {
+        ContentUnavailableView(
+          "Sign-in unavailable in this preview", systemImage: "person.crop.circle")
       } else {
         ContentUnavailableView(
           "Connected",
           systemImage: "checkmark.circle.fill",
-          description: Text("YouTube Premium downloads are ready.")
+          description: Text("Your private YouTube session is connected.")
         )
       }
     }
@@ -43,11 +46,12 @@ struct YouTubeSignInView: View {
 }
 
 private struct YouTubeWebView: NSViewRepresentable {
+  let dataStore: WKWebsiteDataStore
   func makeCoordinator() -> Coordinator { Coordinator() }
 
   func makeNSView(context: Context) -> WKWebView {
     let configuration = WKWebViewConfiguration()
-    configuration.websiteDataStore = .default()
+    configuration.websiteDataStore = dataStore
     configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = context.coordinator

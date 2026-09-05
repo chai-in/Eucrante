@@ -29,7 +29,7 @@ The active `v*` tag ruleset prevents release-tag updates and deletion. Repositor
 ## Builds and website
 
 - GitHub Actions workflows are not used.
-- Cloudflare Workers Static Assets serves `Site/` at `https://eucrante-site.tibcon.workers.dev/`.
+- Cloudflare Workers Static Assets serves the fingerprinted `dist/site/` output of `npm run build` at `https://eucrante-site.tibcon.workers.dev/`; editable source stays in `Site/`.
 - The Cloudflare production branch is `main`, the build command is `npm run build`, and the deploy command is `npx wrangler deploy`.
 - `npm run build` validates required files, page titles, local links/assets, and rejects local-only URLs before deployment.
 - Dependabot maintains the pinned Wrangler development dependency.

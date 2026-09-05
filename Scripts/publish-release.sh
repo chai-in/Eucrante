@@ -60,12 +60,12 @@ git -C "$project_root" ls-remote --exit-code --tags origin "refs/tags/$expected_
 setopt local_options null_glob
 assets=()
 if [[ "$mode" == "public-dmg" ]]; then
-  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*-unnotarized.dmg(N))
+  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-arm64-unnotarized.dmg(N))
   (( ${#disk_images} > 0 )) \
     || fail "no architecture-labelled unnotarized public DMGs were found in dist/"
   archives=("${disk_images[@]}")
 elif [[ "$mode" == "binary" ]]; then
-  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-*.dmg(N))
+  disk_images=("$project_root"/dist/Eucrante-"$version"-"$build"-macOS-arm64.dmg(N))
   disk_images=("${(@)disk_images:#*-unnotarized.dmg}")
   (( ${#disk_images} > 0 )) \
     || fail "no architecture-labelled release DMGs were found in dist/"
@@ -102,6 +102,8 @@ if [[ "$mode" == "binary" || "$mode" == "public-dmg" ]]; then
       || fail "provenance tag does not match $expected_tag: ${provenance:t}"
     [[ "$(plutil -extract gitCommit raw "$provenance")" == "$head_commit" ]] \
       || fail "provenance commit does not match HEAD: ${provenance:t}"
+    [[ "$(plutil -extract architectures raw "$provenance")" == "arm64" ]] \
+      || fail "only Apple silicon (arm64) artifacts can be published"
     [[ "$(plutil -extract archive.name raw "$provenance")" == "${archive:t}" ]] \
       || fail "provenance archive name does not match: ${provenance:t}"
     [[ "$(plutil -extract archive.sha256 raw "$provenance")" == "$archive_hash" ]] \
