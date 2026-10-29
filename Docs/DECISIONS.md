@@ -22,6 +22,6 @@ Apple Password AutoFill suggestions require a reciprocal `webcredentials` associ
 
 Losslessly merge H.264 MP4 and AAC M4A through 1080p. For 1440p/4K, prefer VP9 and convert it to `hvc1` HEVC with Apple VideoToolbox. Build a separate minimal FFmpeg executable from pinned official source under LGPL 2.1 or later with GPL, non-free, network, and external codec libraries disabled. Do not use x265. Add AV1 and claim HDR only after their decoder and color fixtures are verified.
 
-## ADR-006: Apache-2.0
+## ADR-006: Project license
 
-License original Eucrante code and documentation under Apache-2.0. Preserve the licenses and notices of independently distributed bundled tools.
+Original Eucrante code and documentation were initially released under Apache-2.0. The project now uses GPL-3.0-only for its original code and documentation. Earlier versions made available under Apache-2.0 remain available under their original terms. Preserve the licenses and notices of independently distributed bundled tools.

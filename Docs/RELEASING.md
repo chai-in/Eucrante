@@ -2,6 +2,10 @@
 
 Eucrante supports two explicit binary paths. Public previews may use a clearly labelled, ad-hoc-signed, unnotarized DMG while the maintainer has only a free Apple developer account. Stable binary releases require Developer ID signing and Apple notarization. Both paths require a clean, exactly tagged commit, the assembled-bundle audit, an architecture-labelled artifact, a portable SHA-256 file, machine-readable provenance, and a draft-first GitHub Release.
 
+## License and source distribution
+
+The app bundle includes Eucrante's GPL-3.0-only license and notice, the historical Apache-2.0 license, and separate notices for bundled tools. Before distributing a binary, review the GPL-3.0 terms and the bundled tools' licenses for the exact artifacts being shipped. Provide the complete corresponding source for the exact binary under an applicable GPL-3.0 section 6 option, including required build and installation scripts, and make the source location and terms clear to recipients. Check any applicable installation-information obligations and the separate source and notice obligations for the bundled tools. Verify availability for the period required by the chosen distribution option. GitHub's automatically generated source archive alone is not a substitute for checking that the corresponding source is complete.
+
 ## Architecture policy
 
 `make app` produces a native bundle for the build Mac. The app executable, Deno, and the restricted FFmpeg build are single-architecture; the bundle verifier requires every helper to support the app architecture. The pinned yt-dlp helper is universal. Release filenames declare their architecture, for example `Eucrante-0.1.0-1-macOS-arm64.zip`.

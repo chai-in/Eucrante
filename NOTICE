@@ -1,8 +1,8 @@
 Copyright 2026 project contributors
 
-The Eucrante app icon is original project artwork generated with OpenAI image generation and transformed into macOS icon assets by project build tooling.
+The Eucrante app icon is included as project artwork and transformed into macOS icon assets by project build tooling.
 
-Original Eucrante code and documentation are provided under Apache License 2.0.
+Original Eucrante code and documentation are provided under GPL-3.0-only. Previous versions were provided under Apache License 2.0.
 
 Release builds embed separately distributed yt-dlp, Deno, and FFmpeg executables. Those
 works retain their own licenses and are documented in THIRD_PARTY_NOTICES.md.

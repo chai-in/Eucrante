@@ -43,7 +43,7 @@ npm run build
 - Never include browser data, cookies, private URLs, downloaded media, signing identities, or provisioning profiles.
 - Treat source URLs, filenames, helper output, metadata, and downloaded media as untrusted input.
 
-By submitting a contribution, you agree that it is licensed under the Apache License 2.0 under the contribution terms in section 5 of that license. No separate contributor license agreement is currently required.
+By submitting a contribution, you agree to license it under GPL-3.0-only. No separate contributor license agreement is currently required.
 
 ## Reporting security problems
 

@@ -80,4 +80,4 @@ The project website is deployed as Cloudflare Workers Static Assets. Its Cloudfl
 
 ## License
 
-Original Eucrante source and documentation are licensed under [Apache License 2.0](LICENSE). Bundled helpers retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+Original Eucrante source and documentation are licensed under [GPL-3.0-only](LICENSE). Earlier versions made available under Apache-2.0 remain available under their original terms; see [the historical license](LICENSE-APACHE-2.0-HISTORICAL). Bundled helpers retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).

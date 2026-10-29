@@ -22,6 +22,9 @@ required_files=(
   "$contents/Resources/Tools/deno"
   "$contents/Resources/Tools/ffmpeg"
   "$contents/Resources/Eucrante.icns"
+  "$contents/Resources/Licenses/Eucrante/LICENSE"
+  "$contents/Resources/Licenses/Eucrante/LICENSE-APACHE-2.0-HISTORICAL"
+  "$contents/Resources/Licenses/Eucrante/NOTICE"
   "$contents/Resources/Licenses/yt-dlp/LICENSE"
   "$contents/Resources/Licenses/deno/LICENSE.md"
   "$contents/Resources/Licenses/ffmpeg/COPYING.LGPLv2.1"
@@ -31,6 +34,18 @@ required_files=(
 for file in "${required_files[@]}"; do
   [[ -f "$file" ]] || fail "required file is missing: ${file#$app_path/}"
 done
+
+# A present but stale or truncated notice is not sufficient for distribution.
+for notice in LICENSE LICENSE-APACHE-2.0-HISTORICAL NOTICE; do
+  cmp -s "$project_root/$notice" "$contents/Resources/Licenses/Eucrante/$notice" \
+    || fail "bundled Eucrante notice differs from source: $notice"
+done
+cmp -s "$project_root/THIRD_PARTY_NOTICES.md" "$contents/Resources/THIRD_PARTY_NOTICES.md" \
+  || fail "bundled third-party notices differ from source"
+cmp -s "$project_root/ThirdParty/yt-dlp/LICENSE" "$contents/Resources/Licenses/yt-dlp/LICENSE" \
+  || fail "bundled yt-dlp license differs from source"
+cmp -s "$project_root/ThirdParty/deno/LICENSE.md" "$contents/Resources/Licenses/deno/LICENSE.md" \
+  || fail "bundled Deno license differs from source"
 
 plutil -lint "$contents/Info.plist" >/dev/null
 identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$contents/Info.plist")"

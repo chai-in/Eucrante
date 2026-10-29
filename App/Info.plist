@@ -42,7 +42,7 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 project contributors. Apache-2.0.</string>
+    <string>Copyright © 2026 project contributors. GPL-3.0-only.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Eucrante uses Automation only when you choose Import to Music for a finished audio file.</string>
     <key>NSPrincipalClass</key>
