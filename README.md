@@ -2,7 +2,7 @@
 
 Eucrante is a native macOS app for saving media directly on your Mac. There is no Eucrante account, server, localhost service, Cloudflare setup, relay PC, or remote job store.
 
-[Website](https://eucrante-site.tibcon.workers.dev/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
+[Website](https://chai-in.github.io/Eucrante/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
 
 ![Eucrante icon](App/Artwork/EucranteIcon.png)
 
