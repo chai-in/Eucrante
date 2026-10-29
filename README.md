@@ -1,30 +1,65 @@
-# Eucrante
+<p>
+  <img src="Docs/assets/header.svg" alt="Eucrante — your media, on your Mac" width="100%">
+</p>
 
-Eucrante is a native macOS app for saving media directly on your Mac. There is no Eucrante account, server, localhost service, Cloudflare setup, relay PC, or remote job store.
+Eucrante is a native macOS app for saving media locally, preparing Apple-compatible audio and video, and importing audio into Music. Paste a link, choose an output, and save it to your Mac.
 
-[Website](https://chai-in.github.io/Eucrante/) · [Documentation](Docs/PRODUCT.md) · [Releases](https://github.com/chai-in/Eucrante/releases)
+[Build](#build) · [Features](#current-product) · [How it works](#how-it-works) · [Website](https://chai-in.github.io/Eucrante/) · [Contribute](CONTRIBUTING.md)
 
-![Eucrante icon](App/Artwork/EucranteIcon.png)
-
-The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bundled Deno runtime for YouTube's JavaScript challenges, a minimal LGPL FFmpeg build for VP9 decoding, and Apple frameworks for HEVC encoding, inspection, merging, notifications, Finder integration, and Music import. Eucrante means “bringer of fulfillment” and is named for a Nereid of successful voyages.
+> **In development — build from source.** There are no tagged releases or public binary downloads yet. Requires **macOS 14+**, **full Xcode**, and the **Swift 6 toolchain**.
 
 ## Current product
 
-- Four one-click Apple output policies: Music — Best, Music — Efficient, Video — Best, and Video — Efficient.
-- Local YouTube downloads with a private YouTube sign-in inside Eucrante; no sign-in is needed for other supported providers.
-- YouTube Premium formats are requested from the same app and Mac network context; Eucrante never reads another browser's files.
-- H.264 through 1080p is merged with AAC locally without generation loss.
-- 1440p and 4K VP9 sources are converted locally to Apple-native HEVC/H.265 with VideoToolbox hardware acceleration when available and Apple's software fallback otherwise; compatible AAC is copied without another lossy audio encode.
-- Finished files are inspected before the job is marked complete.
-- Local queue/history, cancellation, retry, custom output folder, Finder reveal, Trash, notifications, and explicit Music import.
-- Filename-style previews in Settings that match the actual saved names.
-- No analytics or advertising SDKs.
+| Task | What Eucrante provides |
+| :--- | :--- |
+| Choose an output | Music — Best, Music — Efficient, Video — Best, Video — Efficient, and Custom, with codec, quality, and exact or estimated size previews. |
+| Save audio for Music | Provider metadata and artwork, optional manual edits, and explicit Music import that preserves the downloaded audio. |
+| Prepare video for Apple devices | H.264/AAC merging through 1080p; local VP9-to-HEVC conversion for 1440p and 4K SDR, with Apple hardware acceleration when available. |
+| Manage ongoing work | Local queue and history, progress, cancellation, retry, and a custom output folder. |
+| Find the result | Open the file, reveal it in Finder, move it to Trash, or import audio into Music. Completed files are inspected before success is reported. |
 
-Eucrante does not bypass DRM or access controls. Use it only for media you own or are legally permitted to save, and follow the provider's terms.
+YouTube sign-in happens inside Eucrante's own private browser session. The app does not read another browser's cookies. Premium formats depend on what the provider makes available; membership does not guarantee a distinct format for every video.
+
+Eucrante does not bypass DRM or access controls. Save only media you own or are permitted to download, following the provider's terms. HDR preservation and AV1 input are not currently claimed. See the [output policies](Docs/PRESETS.md) and [YouTube boundary](Docs/YOUTUBE-PREMIUM.md).
 
 ## Build
 
-Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain. `make app` creates a native bundle for the build Mac and verifies that every bundled helper supports that architecture; release archives declare their architecture explicitly.
+On a Mac with the requirements above:
+
+```sh
+git clone https://github.com/chai-in/Eucrante.git
+cd Eucrante
+make app
+```
+
+The app bundle is written to `dist/Eucrante.app`. The build targets the build Mac's architecture and verifies that every bundled helper supports it.
+
+The first build downloads checksum-pinned helpers and builds the minimal FFmpeg helper from source, so it needs internet access. Helpers and their license notices are embedded in the app; users of the resulting bundle do not need to install them separately.
+
+## Install
+
+**Source builds are the current starting point.** [GitHub Releases](https://github.com/chai-in/Eucrante/releases) will carry public previews when they are available.
+
+The public-preview packaging path produces ad-hoc-signed, **unnotarized** DMGs, explicitly named `*-unnotarized.dmg`, with matching checksum and provenance files. These are distinct from the Developer ID-signed and notarized stable-release path.
+
+For a future preview, verify its checksum and source before opening it. If macOS blocks a build you chose to trust, use **System Settings → Privacy & Security → Open Anyway** after the initial launch attempt. Do not disable Gatekeeper or remove quarantine attributes. See the [release guide](Docs/RELEASING.md) for the full distribution and verification process. Homebrew Cask support is deferred until notarized distribution is available.
+
+## How it works
+
+1. **Preview:** the native SwiftUI interface probes the link locally and shows available outputs and metadata.
+2. **Acquire:** bundled `yt-dlp` and Deno helpers fetch media directly from the provider.
+3. **Prepare:** compatible streams are merged without re-encoding. Higher-resolution VP9 video is converted locally to HEVC using a minimal LGPL FFmpeg build and Apple's VideoToolbox.
+4. **Verify and save:** AVFoundation inspects the finished media before it reaches the chosen output folder. Music import is a separate, explicit action.
+
+Processing and job history stay on the Mac. There is no Eucrante account or hosted processing service, and no analytics or advertising SDK. Providers receive the requests needed to fetch their media. See [privacy](PRIVACY.md) and the [architecture](Docs/ARCHITECTURE.md) for the boundaries.
+
+### Why the local design?
+
+Eucrante began with a native Mac interface and a hosted backend. It was rebuilt around a single local runtime so the everyday workflow would not depend on setting up infrastructure or another computer. The [architecture decisions](Docs/DECISIONS.md) explain the current design; the [commit history](https://github.com/chai-in/Eucrante/commits/main/) records its evolution.
+
+## Development
+
+Run the native checks on macOS:
 
 ```sh
 swift test -Xswiftc -warnings-as-errors
@@ -33,51 +68,31 @@ swift run EucranteCoreChecks
 make app
 ```
 
-`make app` downloads the exact pinned helper releases, verifies their SHA-256 checksums, builds FFmpeg 9.0.1 from its verified official source with GPL and non-free components disabled, embeds the tools under `Eucrante.app/Contents/Resources/Tools`, signs the nested executables, and then signs the app. Development copies live only under `.build/eucrante-tools` and are not committed.
+<details>
+<summary>Optional live-media checks</summary>
 
-For the opt-in live YouTube check:
+Use a media fixture you are authorized to download:
 
 ```sh
 EUCRANTE_E2E_URL='https://www.youtube.com/watch?v=…' \
 swift run EucranteCoreChecks
 ```
 
-Add `EUCRANTE_E2E_4K=1` to exercise the VP9-to-HEVC 4K path. Developers may pass a temporary Netscape cookie file with `EUCRANTE_E2E_COOKIE_FILE`; the shipping app creates and immediately deletes its own file from its private WebKit session.
+Add `EUCRANTE_E2E_4K=1` for the VP9-to-HEVC 4K path. Developers may supply a temporary Netscape cookie file through `EUCRANTE_E2E_COOKIE_FILE`. Never commit cookies or private media. The shipping app creates a restricted temporary export from its own WebKit session and deletes it after acquisition.
 
-## Install
+</details>
 
-Eucrante has no tagged release yet. Until the first preview appears, clone `main` and build it locally using the steps above. Future public preview DMGs will be attached to [GitHub Releases](https://github.com/chai-in/Eucrante/releases) with matching checksum and provenance files.
-
-The maintainer's free Apple developer account does not include Developer ID distribution or notarization. Preview DMGs are therefore ad-hoc signed, clearly named `*-unnotarized.dmg`, and published as GitHub prereleases. macOS blocks their first launch. This does not require disabling Gatekeeper:
-
-1. Download the DMG and its `.sha256` file from the same GitHub Release.
-2. Verify the checksum, open the DMG, and drag Eucrante to Applications.
-3. Try to open Eucrante once.
-4. Open **System Settings > Privacy & Security**, click **Open Anyway**, then confirm **Open**.
-
-Never disable Gatekeeper and never run a command that removes quarantine attributes. Review the tag, source, checksum, and provenance before approving an unnotarized build.
-
-Verify from the directory containing both downloaded files:
-
-```sh
-shasum -a 256 -c Eucrante-*.dmg.sha256
-```
-
-If Developer ID and notarization become available later, stable releases will use notarized DMG and ZIP artifacts that open normally. Homebrew Cask support remains deferred until then because Homebrew does not replace Apple signing or notarization.
-
-The project website is deployed as Cloudflare Workers Static Assets. Its Cloudflare build runs `npm run build` before `npx wrangler deploy`. Native app checks remain local because Eucrante requires macOS, AppKit, AVFoundation, and Xcode, which are unavailable in Cloudflare's Linux build image.
+The [contribution guide](CONTRIBUTING.md) covers formatting, builds, and review expectations. Native app checks require macOS and Xcode; the static website has separate portable build checks.
 
 ## Architecture and product notes
 
-- [Architecture](Docs/ARCHITECTURE.md)
-- [Product contract](Docs/PRODUCT.md)
-- [Preset policies](Docs/PRESETS.md)
-- [YouTube Premium boundary](Docs/YOUTUBE-PREMIUM.md)
-- [Release process](Docs/RELEASING.md)
-- [Repository settings](Docs/REPOSITORY.md)
-- [Security policy](SECURITY.md)
-- [Privacy](PRIVACY.md)
+| For | Read |
+| :--- | :--- |
+| Product behavior | [Product contract](Docs/PRODUCT.md) · [Presets](Docs/PRESETS.md) · [Roadmap](Docs/ROADMAP.md) |
+| Implementation | [Architecture](Docs/ARCHITECTURE.md) · [Decisions](Docs/DECISIONS.md) · [UI system](Docs/UI-SYSTEM.md) |
+| Distribution | [Releasing](Docs/RELEASING.md) · [Repository notes](Docs/REPOSITORY.md) · [Changelog](CHANGELOG.md) |
+| Help and reports | [Support](SUPPORT.md) · [Security policy](SECURITY.md) · [Privacy](PRIVACY.md) |
 
 ## License
 
-Original Eucrante source and documentation are licensed under [Apache License 2.0](LICENSE). Bundled helpers retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+Original Eucrante code and documentation are licensed under [Apache License 2.0](LICENSE). Bundled helpers retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). Eucrante uses the work of the yt-dlp, Deno, and FFmpeg projects alongside Apple frameworks.
