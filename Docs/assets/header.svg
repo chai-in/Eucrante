@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Eucrante — Your media. On your Mac.</title>
+  <desc id="desc">A play symbol and audio waveform illustrate local media processing. Decorative artwork, not an application screenshot.</desc>
+  <rect width="1200" height="260" rx="16" fill="#111820"/>
+  <path d="M0 240H1200" stroke="#29333E"/>
+  <rect x="40" y="43" width="4" height="169" rx="2" fill="#88C9E6"/>
+  <text x="66" y="63" fill="#88C9E6" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="2.4">NATIVE MACOS / LOCAL MEDIA</text>
+  <text x="62" y="136" fill="#F4F0EB" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="62" font-weight="700" letter-spacing="-1.8">Eucrante</text>
+  <text x="66" y="176" fill="#B9C3CE" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="25">Your media. On your Mac.</text>
+  <text x="66" y="213" fill="#8192A2" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="1.4">SWIFT · APPLE MEDIA FRAMEWORKS · IN DEVELOPMENT</text>
+  <circle cx="1000" cy="119" r="76" stroke="#304758" stroke-width="2"/>
+      <circle cx="1000" cy="119" r="54" stroke="#304758" stroke-width="2"/>
+      <path d="M975 85L1030 119L975 153V85Z" fill="#88C9E6"/>
+      <g stroke="#88C9E6" stroke-width="4" stroke-linecap="round"><path d="M839 109V129M854 93V145M869 102V136M1131 102V136M1146 93V145M1161 109V129"/></g>
+</svg>
