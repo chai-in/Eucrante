@@ -4,16 +4,20 @@ import Darwin
 struct BoundedLineBuffer: Sendable {
   private let capacity: Int
   private var values: [String] = []
+  private var byteCount = 0
 
   init(capacity: Int) {
     self.capacity = max(1, capacity)
   }
 
   mutating func append(_ value: String) {
-    if values.count == capacity {
-      values.removeFirst()
+    while !values.isEmpty
+      && (values.count == capacity || byteCount + value.utf8.count > 8 * 1_024 * 1_024)
+    {
+      byteCount -= values.removeFirst().utf8.count
     }
     values.append(value)
+    byteCount += value.utf8.count
   }
 
   var lines: [String] { values }
@@ -28,6 +32,13 @@ final class CancellableProcess: @unchecked Sendable {
   init(_ process: Process, escalationDelay: Duration = .milliseconds(750)) {
     self.process = process
     self.escalationDelay = escalationDelay
+  }
+
+  func start() throws {
+    try lock.withLock {
+      guard !cancellationRequested else { throw CancellationError() }
+      try process.run()
+    }
   }
 
   func cancel() {
@@ -85,6 +96,11 @@ final class ProcessLineReader: @unchecked Sendable {
   private var pending = Data()
   private var captured: BoundedLineBuffer
   private var closed = false
+  private var discardingLine = false
+  private var oversized = false
+  static let maximumLineBytes = 4 * 1_024 * 1_024
+
+  var exceededLimit: Bool { stateLock.withLock { oversized } }
 
   init(capacity: Int, onLine: @escaping @Sendable (String) -> Void) {
     captured = BoundedLineBuffer(capacity: capacity)
@@ -133,8 +149,18 @@ final class ProcessLineReader: @unchecked Sendable {
       while let newline = pending.firstIndex(of: 0x0A) {
         var line = Data(pending[pending.startIndex..<newline])
         pending.removeSubrange(pending.startIndex...newline)
+        if discardingLine || line.count > Self.maximumLineBytes {
+          oversized = true
+          discardingLine = false
+          continue
+        }
         if line.last == 0x0D { line.removeLast() }
         values.append(String(decoding: line, as: UTF8.self))
+      }
+      if pending.count > Self.maximumLineBytes {
+        pending.removeAll(keepingCapacity: false)
+        discardingLine = true
+        oversized = true
       }
       for value in values { captured.append(value) }
       return values
@@ -168,11 +194,18 @@ actor LocalProcessRunner {
     }
     process.terminationHandler = { _ in termination.signal() }
     let running = CancellableProcess(process)
+    defer {
+      pipe.fileHandleForReading.readabilityHandler = nil
+      try? pipe.fileHandleForWriting.close()
+      _ = reader.finish(reading: pipe.fileHandleForReading)
+    }
 
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       do {
-        try process.run()
+        try running.start()
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
         pipe.fileHandleForReading.readabilityHandler = nil
         _ = reader.finish(reading: pipe.fileHandleForReading)
@@ -183,6 +216,7 @@ actor LocalProcessRunner {
       pipe.fileHandleForReading.readabilityHandler = nil
       let captured = reader.finish(reading: pipe.fileHandleForReading)
       try Task.checkCancellation()
+      guard !reader.exceededLimit else { throw LocalAcquisitionError.outputTooLarge }
       guard process.terminationReason == .exit, process.terminationStatus == 0 else {
         throw LocalMediaAcquirer.processError(
           status: process.terminationStatus,

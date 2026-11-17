@@ -1,0 +1,27 @@
+{
+  "files": {
+    "NOTICE.md": "0ad05b8f1ebcff262c2e03b7c774b199d47b5ad7e80f267a2c5a5db535cd4517",
+    "Package.swift": "6379d14d7ec2eebede2e19c425ebcd96e2076b030900ccd273fe3ed7b30a908c",
+    "Sources/CArchive/archive.h": "68a6d9e284a58094fe423d3baf95df20688e175e915797888060bb3c13cf58c4",
+    "Sources/CArchive/archive_entry.h": "2badd3cb7e238508837973e636c22b94d251dde3c3a668c28ea0183a18d00780",
+    "Sources/CArchive/module.modulemap": "bf020a24a564f59ebb1f155267b52c85946d70e8d29e5cbff13c80e81d11a517",
+    "Sources/CArchive/shim.h": "413b1859a583827ca3834d0a6ee6d2e3fdf153f47a606b3dca8e385e44cbfbcf",
+    "Sources/HarborCore/ArchiveExtractor.swift": "014ccf95ebea3cfd2027c7908f8094a94b92ed98c62b6d50bcfcda5761577fe1",
+    "Sources/HarborCore/BundleInspector.swift": "08368a84044c6b95212b64096a7d46b31091b597049ca1cf4326b167eb99aeb8",
+    "Sources/HarborCore/CatalogStore.swift": "79bb444ee44993072b417cb2d6392d37d95ec9e1800ca4824f09a7889ee88099",
+    "Sources/HarborCore/Downloader.swift": "5f189266623e67b2afd56dc0bd5fe7e79107c3aa23e1216fa2539898edd52938",
+    "Sources/HarborCore/Files.swift": "ba4cbf5ef7234fb31e1ace2d9224b7cb3bbbfa9c4013b9fb9af5b3060b28fffa",
+    "Sources/HarborCore/Installer.swift": "dfb75660125c40c651f984ef82626813f5ac068bc92019955add035bdd86917f",
+    "Sources/HarborCore/RunningApps.swift": "95f0174337c51bcfb358dfe0714e1610921bd04b29d2c4ba5d94def056b3a84e",
+    "Sources/HarborCore/Validation.swift": "2fd28ee1e6b624f86a99de5c7f049beb40164ed7e5f4cdc06db61b6786f66299",
+    "Sources/HarborKit/Contracts.swift": "173257d4a90810d4dfbbf21aaa41b0fc1e6e3f020fc4798412ad97e5ff389650",
+    "Sources/HarborKit/HarborClient.swift": "27605f16edff09f66563cf264987e5e84abd4590c1330feb2b5875f1e07ee24c",
+    "Sources/HarborKit/IntegrationManifest.swift": "09c7734437a9452921ebff8e6da16915b2987aa3460768bd8fdb76dd95d05d02",
+    "Sources/HarborKit/SelfInstall.swift": "171ebb862ef98c07b24fdbce29f1c070325ba727b8f4c94aef71b380658c6591",
+    "Sources/HarborRelease/main.swift": "81afd0ea8fb111cf3ad9d07d8e10a56e1d5e869a59db9aca6de900314e585d01"
+  },
+  "schema": 1,
+  "snapshotDigest": "14eb5bc3a101ae39becb570ae5ef9a53e8fbeb1295096fda1b06cfffd9c6b494",
+  "sourceCommit": "4ab1628f2dc9cb5f41285328a0bb576ea247a839",
+  "sourceDirty": true
+}

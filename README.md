@@ -6,19 +6,21 @@ Eucrante is a native macOS app for saving media locally, preparing Apple-compati
 
 [Build](#build) · [Features](#current-product) · [How it works](#how-it-works) · [Website](https://chai-in.github.io/Eucrante/) · [Contribute](CONTRIBUTING.md)
 
-> **In development — build from source.** There are no tagged releases or public binary downloads yet. Requires **macOS 14+**, **full Xcode**, and the **Swift 6 toolchain**.
+> **In development — build from source.** There are no tagged releases or public binary downloads yet. Requires an **Apple silicon Mac**, **macOS 14+**, **full Xcode**, and the **Swift 6 toolchain**.
 
 ## Current product
 
 | Task | What Eucrante provides |
 | :--- | :--- |
+| Pick media from Safari | A Favorites button scans the current page, verifies downloadable candidates, and opens details before saving. |
+| Edit a selection | Visual start/end handles, exact timestamps, zoom, selection playback, metadata, and square cover treatments. |
 | Choose an output | Music — Best, Music — Efficient, Video — Best, Video — Efficient, and Custom, with codec, quality, and exact or estimated size previews. |
 | Save audio for Music | Provider metadata and artwork, optional manual edits, and explicit Music import that preserves the downloaded audio. |
 | Prepare video for Apple devices | H.264/AAC merging through 1080p; local VP9-to-HEVC conversion for 1440p and 4K SDR, with Apple hardware acceleration when available. |
-| Manage ongoing work | Local queue and history, progress, cancellation, retry, and a custom output folder. |
-| Find the result | Open the file, reveal it in Finder, move it to Trash, or import audio into Music. Completed files are inspected before success is reported. |
+| Manage ongoing work | FIFO queue and history, pause/resume, concurrency, search, status filters, cancellation, retry, and a per-save output folder. |
+| Find the result | Open the file, reveal it in Finder, move it to Trash, or import audio into Music. Completed files are inspected before success is reported; audio is decoded for sound/timing checks, with packet-preserving repair for malformed M4A timelines. |
 
-YouTube sign-in happens inside Eucrante's own private browser session. The app does not read another browser's cookies. Premium formats depend on what the provider makes available; membership does not guarantee a distinct format for every video.
+Website sign-in for YouTube, Instagram, TikTok, and other supported sites happens inside Eucrante's own private browser session. Authentication failures identify the affected site and offer reconnect/recheck; public links need no login. The app does not read another browser's cookies. Premium formats depend on what the provider makes available; membership does not guarantee a distinct format for every video.
 
 Eucrante does not bypass DRM or access controls. Save only media you own or are permitted to download, following the provider's terms. HDR preservation and AV1 input are not currently claimed. See the [output policies](Docs/PRESETS.md) and [YouTube boundary](Docs/YOUTUBE-PREMIUM.md).
 
@@ -32,7 +34,7 @@ cd Eucrante
 make app
 ```
 
-The app bundle is written to `dist/Eucrante.app`. The build targets the build Mac's architecture and verifies that every bundled helper supports it.
+The app bundle is written to `dist/Eucrante.app`. This working version targets arm64 only; build natively outside Rosetta. The build verifies that every bundled helper supports arm64 before replacing the previous local bundle.
 
 The first build downloads checksum-pinned helpers and builds the minimal FFmpeg helper from source, so it needs internet access. Helpers and their license notices are embedded in the app; users of the resulting bundle do not need to install them separately.
 
@@ -68,6 +70,10 @@ swift run EucranteCoreChecks
 make app
 ```
 
+`make preview` opens a Debug build with disposable history, generated media fixtures, and a non-persistent website session. Opening a website in that session still contacts the provider. Release builds omit fixture mode.
+
+Portable checks for a Linux development host and the preserved task history are in the [T3 migration handoff](Docs/Migration/HANDOFF.md). Linux does not build or run the native Mac app.
+
 <details>
 <summary>Optional live-media checks</summary>
 
@@ -89,7 +95,7 @@ The [contribution guide](CONTRIBUTING.md) covers formatting, builds, and review 
 | For | Read |
 | :--- | :--- |
 | Product behavior | [Product contract](Docs/PRODUCT.md) · [Presets](Docs/PRESETS.md) · [Roadmap](Docs/ROADMAP.md) |
-| Implementation | [Architecture](Docs/ARCHITECTURE.md) · [Decisions](Docs/DECISIONS.md) · [UI system](Docs/UI-SYSTEM.md) |
+| Implementation | [Architecture](Docs/ARCHITECTURE.md) · [Decisions](Docs/DECISIONS.md) · [UI system](Docs/UI-SYSTEM.md) · [Performance](Docs/PERFORMANCE.md) |
 | Distribution | [Releasing](Docs/RELEASING.md) · [Repository notes](Docs/REPOSITORY.md) · [Changelog](CHANGELOG.md) |
 | Help and reports | [Support](SUPPORT.md) · [Security policy](SECURITY.md) · [Privacy](PRIVACY.md) |
 

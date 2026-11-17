@@ -1,0 +1,7 @@
+#!/bin/zsh
+set -euo pipefail
+integration="${0:A:h}"
+python3 "$integration/embed.py" --verify-sdk
+swift build --package-path "$integration/SDK" --arch arm64 -c release --product harbor-release >/dev/null
+bin="$(swift build --package-path "$integration/SDK" --arch arm64 -c release --show-bin-path)"
+exec "$bin/harbor-release" "$@"

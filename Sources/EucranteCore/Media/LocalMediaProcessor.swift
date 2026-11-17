@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import AudioToolbox
 import CoreMedia
+import Darwin
 import Foundation
 
 public struct MediaFileInfo: Codable, Equatable, Sendable {
@@ -147,14 +148,52 @@ public actor LocalMediaProcessor: MediaProcessing {
     destination: URL,
     progress: @escaping @Sendable (Double) -> Void = { _ in }
   ) async throws -> ProcessedMedia {
+    try Task.checkCancellation()
+    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+    let staging = destination.appendingPathComponent(
+      ".eucrante-\(UUID().uuidString)", isDirectory: true)
+    try SecureCredentialFile.prepareDirectory(staging, fileManager: fileManager)
+    defer { try? fileManager.removeItem(at: staging) }
+
+    let repaired = try await AudioContainerRepair.repairIfNeeded(input, in: staging)
+    let processed = try await processInStaging(
+      repaired, preset: preset, suggestedFilename: suggestedFilename ?? input.lastPathComponent,
+      destination: staging, progress: progress)
+    if processed.output.audioCodec != nil, processed.output.videoCodec == nil {
+      try verifyDecodedAudio(processed.url, expectedDuration: processed.output.duration)
+    }
+    try Task.checkCancellation()
+    let output = reserveDestination(for: processed.url.lastPathComponent, in: destination)
+    defer { releaseDestination(output) }
+    // Same-volume publication happens only after verification and never replaces an existing file.
+    do {
+      try fileManager.moveItem(at: processed.url, to: output)
+    } catch {
+      throw MediaProcessingError.file(error.localizedDescription)
+    }
+    return ProcessedMedia(
+      url: output, decision: processed.decision, source: processed.source, output: processed.output)
+  }
+
+  private func processInStaging(
+    _ input: URL,
+    preset: EucrantePreset,
+    suggestedFilename: String?,
+    destination: URL,
+    progress: @escaping @Sendable (Double) -> Void
+  ) async throws -> ProcessedMedia {
     guard preset != .custom else {
       let source = try await inspect(input)
+      try Self.verify(source: source, output: source, preset: .custom, decision: .passthrough)
+      try Task.checkCancellation()
       let outputURL = try copy(
         input,
         named: suggestedFilename ?? input.lastPathComponent,
         to: destination
       )
-      return ProcessedMedia(url: outputURL, decision: .passthrough, source: source, output: source)
+      let output = try await inspect(outputURL)
+      try Self.verify(source: source, output: output, preset: .custom, decision: .passthrough)
+      return ProcessedMedia(url: outputURL, decision: .passthrough, source: source, output: output)
     }
 
     try Task.checkCancellation()
@@ -217,6 +256,89 @@ public actor LocalMediaProcessor: MediaProcessing {
     try Self.verify(source: source, output: output, preset: preset, decision: decision)
     progress(1)
     return ProcessedMedia(url: outputURL, decision: decision, source: source, output: output)
+  }
+
+  /// Edits stay in the job's private staging directory until the ordinary processing
+  /// and verification path publishes the finished file.
+  public func prepareForSave(
+    _ input: URL, timeRange: MediaTimeRange?, metadata: MediaMetadata?, directory: URL
+  ) async throws -> URL {
+    let repaired = try await AudioContainerRepair.repairIfNeeded(input, in: directory)
+    let info = try await inspect(repaired)
+    let embedsMetadata = metadata != nil && repaired.pathExtension.lowercased() == "m4a"
+    guard timeRange != nil || embedsMetadata else { return repaired }
+    let duration = try timeRange?.duration(in: info.duration) ?? info.duration
+    let isAudio = info.videoCodec == nil
+    let output = try await exportAsset(
+      AVURLAsset(url: repaired), presetName: AVAssetExportPresetPassthrough,
+      fileType: isAudio ? .m4a : .mp4,
+      filename: "edited-\(UUID().uuidString).\(isAudio ? "m4a" : "mp4")",
+      destination: directory, progress: { _ in },
+      timeRange: timeRange.map {
+        CMTimeRange(
+          start: CMTime(seconds: $0.start, preferredTimescale: 600_000),
+          duration: CMTime(seconds: duration, preferredTimescale: 600_000))
+      }, metadata: embedsMetadata ? metadata : nil)
+    let outputInfo = try await inspect(output)
+    guard abs(outputInfo.duration - duration) <= 0.15 else {
+      throw MediaProcessingError.verification("The saved clip does not match the selected times.")
+    }
+    return output
+  }
+
+  private func verifyDecodedAudio(_ url: URL, expectedDuration: Double) throws {
+    let file = try AVAudioFile(forReading: url)
+    guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 32_768)
+    else {
+      throw MediaProcessingError.reader
+    }
+    var frames: Int64 = 0
+    var hasSignal = false
+    while file.framePosition < file.length {
+      try Task.checkCancellation()
+      try file.read(into: buffer)
+      guard buffer.frameLength > 0 else { break }
+      frames += Int64(buffer.frameLength)
+      if !hasSignal, let channels = buffer.floatChannelData {
+        for channel in 0..<Int(buffer.format.channelCount) {
+          for sample in 0..<Int(buffer.frameLength) where abs(channels[channel][sample]) > 0.000001
+          {
+            hasSignal = true
+            break
+          }
+        }
+      }
+    }
+    let seconds = Double(frames) / file.processingFormat.sampleRate
+    guard frames > 0, abs(seconds - expectedDuration) <= max(1, expectedDuration * 0.02) else {
+      throw MediaProcessingError.verification(
+        "Decoded audio does not match the file's playback timing.")
+    }
+    guard hasSignal else {
+      throw MediaProcessingError.verification("The downloaded audio is silent. Try another source.")
+    }
+  }
+
+  /// Pull the audio track out of a social-video MP4 before trimming and tagging it.
+  public func extractAudioIfNeeded(_ input: URL, in directory: URL) async throws -> URL {
+    let asset = AVURLAsset(url: input)
+    guard !(try await asset.loadTracks(withMediaType: .video)).isEmpty else { return input }
+    guard let source = try await asset.loadTracks(withMediaType: .audio).first else {
+      throw MediaProcessingError.missingInput
+    }
+    let composition = AVMutableComposition()
+    guard
+      let track = composition.addMutableTrack(
+        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+    else {
+      throw MediaProcessingError.writer
+    }
+    let range = try await source.load(.timeRange)
+    try track.insertTimeRange(range, of: source, at: .zero)
+    return try await exportAsset(
+      composition, presetName: AVAssetExportPresetPassthrough,
+      fileType: .m4a, filename: "audio-\(UUID().uuidString).m4a", destination: directory,
+      progress: { _ in })
   }
 
   public func merge(
@@ -317,7 +439,10 @@ public actor LocalMediaProcessor: MediaProcessing {
     let output = reserveDestination(for: safe, in: destination)
     defer { releaseDestination(output) }
     do {
-      try fileManager.copyItem(at: input, to: output)
+      // APFS clones share media blocks until either copy changes. Other volumes use a normal copy.
+      if clonefile(input.path, output.path, 0) != 0 {
+        try fileManager.copyItem(at: input, to: output)
+      }
       return output
     } catch {
       throw MediaProcessingError.file(error.localizedDescription)
@@ -348,7 +473,9 @@ public actor LocalMediaProcessor: MediaProcessing {
     fileType: AVFileType,
     filename: String,
     destination: URL,
-    progress: @escaping @Sendable (Double) -> Void
+    progress: @escaping @Sendable (Double) -> Void,
+    timeRange: CMTimeRange? = nil,
+    metadata: MediaMetadata? = nil
   ) async throws -> URL {
     guard let exporter = AVAssetExportSession(asset: asset, presetName: presetName) else {
       throw MediaProcessingError.exportUnavailable
@@ -361,10 +488,14 @@ public actor LocalMediaProcessor: MediaProcessing {
       in: destination
     )
     defer { releaseDestination(output) }
+    var completed = false
+    defer { if !completed { try? fileManager.removeItem(at: output) } }
     exporter.outputURL = output
     exporter.outputFileType = fileType
     exporter.shouldOptimizeForNetworkUse = true
     exporter.metadataItemFilter = .forSharing()
+    if let timeRange { exporter.timeRange = timeRange }
+    if let metadata { exporter.metadata = Self.metadataItems(metadata) }
     let cancellableExporter = CancellableExportSession(exporter)
 
     progress(0.05)
@@ -385,7 +516,36 @@ public actor LocalMediaProcessor: MediaProcessing {
       throw MediaProcessingError.export(
         exporter.error?.localizedDescription ?? "Unknown export error")
     }
+    completed = true
     return output
+  }
+
+  private static func metadataItems(_ value: MediaMetadata) -> [AVMetadataItem] {
+    var items: [AVMetadataItem] = []
+    func add(_ identifier: AVMetadataIdentifier, _ text: String?) {
+      guard let text, !text.isEmpty else { return }
+      let item = AVMutableMetadataItem()
+      item.identifier = identifier
+      item.value = text as NSString
+      items.append(item)
+    }
+    add(.commonIdentifierTitle, value.title)
+    add(.commonIdentifierArtist, value.artist)
+    add(.commonIdentifierAlbumName, value.album)
+    add(.iTunesMetadataAlbumArtist, value.albumArtist)
+    add(.iTunesMetadataComposer, value.composer)
+    add(.iTunesMetadataUserGenre, value.genre)
+    add(.commonIdentifierCreationDate, value.year.map(String.init))
+    if let url = value.artworkURL, url.isFileURL,
+      let data = try? Data(contentsOf: url), data.count <= 10 * 1_024 * 1_024
+    {
+      let item = AVMutableMetadataItem()
+      item.identifier = .commonIdentifierArtwork
+      item.value = data as NSData
+      item.dataType = "public.jpeg"
+      items.append(item)
+    }
+    return items
   }
 
   private func transcodeAudio(
@@ -524,7 +684,7 @@ public actor LocalMediaProcessor: MediaProcessing {
       {
         throw MediaProcessingError.verification("The output sample rate exceeds the source.")
       }
-    } else {
+    } else if preset != .custom {
       guard output.videoCodec != nil else {
         throw MediaProcessingError.verification("The output does not contain video.")
       }
@@ -541,6 +701,13 @@ public actor LocalMediaProcessor: MediaProcessing {
       if source.isHDR, decision == .transcodeHEVC, !output.isHDR {
         throw MediaProcessingError.verification("HDR metadata was not preserved.")
       }
+    }
+    guard output.audioCodec != nil || output.videoCodec != nil else {
+      throw MediaProcessingError.verification("The output has no playable media tracks.")
+    }
+    if source.duration > 0, abs(source.duration - output.duration) > max(1, source.duration * 0.02)
+    {
+      throw MediaProcessingError.verification("The output duration does not match the source.")
     }
   }
 

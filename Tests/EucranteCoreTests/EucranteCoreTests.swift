@@ -41,6 +41,7 @@ final class EucranteCoreTests: XCTestCase {
       .processing: "Optimizing for Apple devices",
       .verifying: "Checking the finished file",
       .uploading: "Finishing",
+      .cancelling: "Cancelling",
       .completed: "Completed",
       .failed: "Failed",
       .cancelled: "Cancelled",
@@ -49,8 +50,9 @@ final class EucranteCoreTests: XCTestCase {
       XCTAssertEqual(state.displayName, stateNames[state])
       XCTAssertEqual(
         state.isActive,
-        [.queued, .resolving, .downloading, .processing, .verifying, .uploading].contains(
-          state)
+        [.queued, .resolving, .downloading, .processing, .verifying, .uploading, .cancelling]
+          .contains(
+            state)
       )
     }
 
@@ -427,9 +429,13 @@ final class EucranteCoreTests: XCTestCase {
     guard case .merge(let video, let audio, let name, _) = mergeResult else {
       return XCTFail("Expected merge result")
     }
-    XCTAssertEqual(video.lastPathComponent, "video.mp4")
-    XCTAssertEqual(audio.lastPathComponent, "audio.m4a")
+    XCTAssertEqual(video.lastPathComponent, "media-01.mp4")
+    XCTAssertEqual(audio.lastPathComponent, "media-02.m4a")
     XCTAssertEqual(name, "Track Name.mp4")
+    XCTAssertEqual(
+      try String(
+        contentsOf: root.appendingPathComponent("merge-job/.invocations"), encoding: .utf8),
+      "call\n")
 
     var mutePreferences = DownloadPreferences()
     mutePreferences.downloadMode = .mute
@@ -444,7 +450,7 @@ final class EucranteCoreTests: XCTestCase {
     guard case .single(let muteURL, _, _) = muteResult else {
       return XCTFail("Expected mute passthrough")
     }
-    XCTAssertEqual(muteURL.lastPathComponent, "video.mp4")
+    XCTAssertEqual(muteURL.lastPathComponent, "media-01.mp4")
 
     let transcodeResult = try await acquirer(downloader: wideScript).acquire(
       sourceURL: source,
@@ -458,8 +464,8 @@ final class EucranteCoreTests: XCTestCase {
       case .transcode(let wideVideo, let wideAudio, let wideName, let duration, let quality, _) =
         transcodeResult
     else { return XCTFail("Expected HEVC transcode") }
-    XCTAssertEqual(wideVideo.lastPathComponent, "video.mp4")
-    XCTAssertEqual(wideAudio?.lastPathComponent, "audio.m4a")
+    XCTAssertEqual(wideVideo.lastPathComponent, "media-01.mp4")
+    XCTAssertEqual(wideAudio?.lastPathComponent, "media-02.m4a")
     XCTAssertEqual(wideName, "Track Name [fixture-id].mp4")
     XCTAssertEqual(duration, 123.5)
     XCTAssertEqual(quality, .efficient)
@@ -479,11 +485,98 @@ final class EucranteCoreTests: XCTestCase {
     XCTAssertEqual(bestQuality, .best)
   }
 
+  func testSocialVideoFallbackUsesSingleCombinedFile() async throws {
+    let root = temporaryDirectory("EucranteCombinedTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let downloader = try executableScript(
+      """
+      #!/bin/sh
+      selector=''
+      output=''
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --format) selector="$2"; shift 2 ;;
+          --output) output="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      case "$selector" in
+        *',('* | *'acodec!=none'* | *'vcodec!=none'* ) printf '%s\n' 'ERROR: Requested format is not available'; exit 1 ;;
+      esac
+      file=$(printf '%s' "$output" | sed 's/%(autonumber)02d/01/;s/%(ext)s/mp4/')
+      printf 'fixture-media' > "$file"
+      printf '%s\n' 'EUCRANTE_BEGIN:1' 'EUCRANTE_TITLE:"Social Video"' 'EUCRANTE_VCODEC:"avc1"' 'EUCRANTE_END:1'
+      """, named: "combined-downloader", in: root)
+    let result = try await acquirer(downloader: downloader).acquire(
+      sourceURL: URL(string: "https://instagram.com/reel/fixture")!, preset: .appleVideoBest,
+      preferences: DownloadPreferences(), cookieFile: nil,
+      workingDirectory: root.appendingPathComponent("job"), progress: { _ in })
+    guard case .single(let url, let filename, _) = result else {
+      return XCTFail("Expected a combined MP4")
+    }
+    XCTAssertEqual(url.pathExtension, "mp4")
+    XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "combined")
+    XCTAssertEqual(filename, "Social Video.mp4")
+  }
+
+  func testPartialTrackSelectionReusesCombinedMediaAndRecoversMissingTrack() async throws {
+    let root = temporaryDirectory("EucrantePartialSelectionTests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let video = root.appendingPathComponent("video.mp4")
+    let tone = root.appendingPathComponent("tone.wav")
+    try await makeVideo(at: video, duration: 1)
+    try makeTone(at: tone)
+    let processor = LocalMediaProcessor()
+    let audio = try await processor.process(
+      tone, preset: .appleMusicEfficient,
+      suggestedFilename: "audio.m4a", destination: root)
+    let combined = try await processor.merge(
+      video: video, audio: audio.url, filename: "combined.mp4", workingDirectory: root)
+
+    for (index, input) in [combined, video, audio.url].enumerated() {
+      let downloader = try executableScript(
+        """
+        #!/bin/sh
+        selector=''
+        output=''
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            --format) selector="$2"; shift 2 ;;
+            --output) output="$2"; shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        file=$(printf '%s' "$output" | sed 's/%(autonumber)02d/01/;s/%(ext)s/mp4/')
+        case "$selector" in
+          *',('*) cp '\(input.path)' "$file" ;;
+          *) cp '\(combined.path)' "$file" ;;
+        esac
+        printf '%s\\n' 'EUCRANTE_BEGIN:1' 'EUCRANTE_TITLE:"Partial selection"' 'EUCRANTE_END:1'
+        """, named: "partial-downloader-\(index)", in: root)
+      let working = root.appendingPathComponent("job-\(index)")
+      let result = try await acquirer(downloader: downloader).acquire(
+        sourceURL: URL(string: "https://example.com/video")!, preset: .appleVideoBest,
+        preferences: DownloadPreferences(), cookieFile: nil,
+        workingDirectory: working, progress: { _ in })
+      guard case .single(let url, _, _) = result else {
+        return XCTFail("Expected a verified combined file")
+      }
+      let expected = index == 0 ? working : working.appendingPathComponent("combined")
+      XCTAssertEqual(
+        url.deletingLastPathComponent().resolvingSymlinksInPath().path,
+        expected.resolvingSymlinksInPath().path)
+      let media = try await processor.inspect(url)
+      XCTAssertNotNil(media.videoCodec)
+      XCTAssertNotNil(media.audioCodec)
+    }
+  }
+
   func testLocalAcquirerBuildsPreviewFromDownloaderJSON() async throws {
     let root = temporaryDirectory("EucrantePreviewProbeTests")
     defer { try? FileManager.default.removeItem(at: root) }
     let json =
-      #"{"id":"fixture-id","title":"Preview Title","uploader":"Creator","album":"Album","upload_date":"20250102","thumbnail":"https://example.com/cover.jpg","duration":125.5,"formats":[{"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","abr":129.2,"filesize":2030000},{"format_id":"315","ext":"webm","vcodec":"vp9","acodec":"none","width":3840,"height":2160,"fps":60,"tbr":13000,"filesize_approx":203000000}]}"#
+      #"{"metadata":{"id":"fixture-id","title":"Preview Title","uploader":"Creator","album":"Album","upload_date":"20250102","thumbnail":"https://example.com/cover.jpg","duration":125.5},"formats":[{"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","abr":129.2,"filesize":2030000},{"format_id":"315","ext":"webm","vcodec":"vp9","acodec":"none","width":3840,"height":2160,"fps":60,"tbr":13000,"filesize_approx":203000000}]}"#
     let downloader = try executableScript(
       "#!/bin/sh\nprintf '%s\\n' '\(json)'\n",
       named: "preview-downloader",
@@ -861,7 +954,7 @@ final class EucranteCoreTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     try SecureCredentialFile.prepareDirectory(root)
     let file = root.appendingPathComponent("jobs.json")
-    let unreadable = Data(#"{"schemaVersion":99,"jobs":[]}"#.utf8)
+    let unreadable = Data(#"{"schemaVersion":1,"jobs":["broken"]}"#.utf8)
     _ = try SecureCredentialFile.write(unreadable, named: file.lastPathComponent, to: root)
     let store = JobStore(fileURL: file)
     XCTAssertThrowsError(try store.load())
@@ -1059,6 +1152,25 @@ final class EucranteCoreTests: XCTestCase {
     let mergedInfo = try await processor.inspect(merged)
     XCTAssertNotNil(mergedInfo.videoCodec)
     XCTAssertNotNil(mergedInfo.audioCodec)
+
+    let aac = try await processor.process(
+      tone, preset: .appleMusicEfficient,
+      suggestedFilename: "Social Audio.m4a", destination: outputDirectory)
+    let socialVideo = root.appendingPathComponent("social-video.mp4")
+    try await makeVideo(at: socialVideo, duration: 1)
+    let combined = try await processor.merge(
+      video: socialVideo, audio: aac.url,
+      filename: "Social Video.mp4", workingDirectory: outputDirectory)
+    let extracted = try await processor.extractAudioIfNeeded(combined, in: outputDirectory)
+    let extractedInfo = try await processor.inspect(extracted)
+    XCTAssertNil(extractedInfo.videoCodec)
+    XCTAssertEqual(extractedInfo.audioCodec, aac.output.audioCodec)
+    XCTAssertEqual(extractedInfo.duration, aac.output.duration, accuracy: 0.1)
+    let savedAudio = try await processor.process(
+      extracted, preset: .appleMusicBest,
+      suggestedFilename: "Extracted.m4a", destination: outputDirectory)
+    XCTAssertEqual(savedAudio.decision, .passthrough)
+    XCTAssertNil(savedAudio.output.videoCodec)
 
     await xctAssertThrowsErrorAsync(
       try await processor.merge(
@@ -1328,21 +1440,36 @@ final class EucranteCoreTests: XCTestCase {
       """
       #!/bin/sh
       output=''
+      selector=''
       while [ "$#" -gt 0 ]; do
         if [ "$1" = '--output' ]; then
           output="$2"
+          shift 2
+        elif [ "$1" = '--format' ]; then
+          selector="$2"
           shift 2
         else
           shift
         fi
       done
-      case "$output" in
-        *video.*) extension='mp4' ;;
+      printf 'call\\n' >> "${output%/*}/.invocations"
+      case "$selector" in
+        *',('*) tracks='video audio' ;;
+        *bestvideo*) tracks='video' ;;
+        *) tracks='audio' ;;
+      esac
+      index=0
+      for track in $tracks; do
+      index=$((index + 1))
+      number=$(printf '%02d' "$index")
+      case "$track" in
+        video) extension='mp4' ;;
         *) extension='m4a' ;;
       esac
-      file=$(printf '%s' "$output" | sed "s/%(ext)s/$extension/")
+      file=$(printf '%s' "$output" | sed "s/%(autonumber)02d/$number/;s/%(ext)s/$extension/")
       printf 'media' > "$file"
       printf '%s\n' \
+        "EUCRANTE_BEGIN:$index" \
         'EUCRANTE_TITLE:"Provider Title"' \
         'EUCRANTE_TRACK:"Track Name"' \
         'EUCRANTE_ARTIST:"Test Artist"' \
@@ -1364,6 +1491,9 @@ final class EucranteCoreTests: XCTestCase {
         'EUCRANTE_DURATION:"123.5"' \
         'EUCRANTE_PROGRESS:50:100:' \
         'EUCRANTE_PROGRESS:100:100:'
+      if [ "$track" = 'audio' ]; then printf '%s\\n' 'EUCRANTE_VCODEC:"none"'; fi
+      printf '%s\\n' "EUCRANTE_END:$index"
+      done
       """,
       named: name,
       in: directory
@@ -1397,7 +1527,7 @@ final class EucranteCoreTests: XCTestCase {
     try file.write(from: buffer)
   }
 
-  private func makeVideo(at url: URL) async throws {
+  private func makeVideo(at url: URL, duration: Double? = nil) async throws {
     let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
     let input = AVAssetWriterInput(
       mediaType: .video,
@@ -1441,6 +1571,9 @@ final class EucranteCoreTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(5))
     }
     XCTAssertTrue(adaptor.append(buffer, withPresentationTime: .zero))
+    if let duration {
+      writer.endSession(atSourceTime: CMTime(seconds: duration, preferredTimescale: 600))
+    }
     input.markAsFinished()
     await withCheckedContinuation { continuation in
       writer.finishWriting { continuation.resume() }

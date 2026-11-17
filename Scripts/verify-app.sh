@@ -22,6 +22,7 @@ required_files=(
   "$contents/Resources/Tools/deno"
   "$contents/Resources/Tools/ffmpeg"
   "$contents/Resources/Eucrante.icns"
+  "$contents/Resources/Eucrante_EucranteApp.bundle/Contents/Resources/PagePicker.js"
   "$contents/Resources/Licenses/yt-dlp/LICENSE"
   "$contents/Resources/Licenses/deno/LICENSE.md"
   "$contents/Resources/Licenses/ffmpeg/COPYING.LGPLv2.1"
@@ -97,7 +98,10 @@ app_allows_music_automation="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.secu
 
 app_executable="$contents/MacOS/Eucrante"
 app_architectures="$(lipo -archs "$app_executable")"
-[[ -n "$app_architectures" ]] || fail "app executable has no reported architecture"
+[[ "$app_architectures" == "arm64" ]] || fail "Eucrante must be Apple silicon only (arm64)"
+for executable in "$contents/Resources/Tools/deno" "$contents/Resources/Tools/ffmpeg"; do
+  [[ "$(lipo -archs "$executable")" == "arm64" ]] || fail "${executable:t} must be arm64 only"
+done
 for architecture in ${(z)app_architectures}; do
   for executable in \
     "$contents/Resources/Tools/yt-dlp" \

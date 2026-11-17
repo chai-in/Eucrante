@@ -61,17 +61,19 @@ final class EucranteAppTests: XCTestCase {
     ]
     let store = JobStore(fileURL: root.appendingPathComponent("jobs.json"))
     try store.save(jobs)
-    let session = TestYouTubeSessionStore(authenticated: true)
+    let session = TestSiteSessionStore(authenticated: true)
     let model = AppModel(
       defaults: defaults,
       localAcquirer: UnavailableAcquirer(),
-      youtubeSessionStore: session,
+      siteSessionStore: session,
       jobStore: store
     )
     try await waitUntil { model.jobs.count == jobs.count }
-    await model.refreshYouTubeSession()
-    model.finishYouTubeSignIn()
-    try await waitUntil { model.statusMessage == "YouTube is signed in and ready." }
+    await model.refreshSiteSession()
+    model.finishSiteSignIn()
+    try await waitUntil {
+      model.statusMessage == "Website closed. Access will be checked when you choose a link."
+    }
     model.sourceText = "https://example.com/media"
     model.musicMetadataDraft.title = "Manual title"
     model.musicMetadataDraft.year = "2026"
@@ -80,18 +82,17 @@ final class EucranteAppTests: XCTestCase {
     render(QueueView(model: model))
     render(SettingsView(model: model))
     render(AppShellView(model: model))
-    render(YouTubeSignInView(model: model))
+    render(SiteSignInView(model: model))
     for job in model.jobs {
       render(JobRow(model: model, job: job))
     }
-    render(EmptyView().eucranteCard())
     _ = Color.eucranteAccent
 
     let previewModel = AppModel(
       defaults: defaults,
       localAcquirer: FixtureAcquirer(),
       localPreviewer: FixturePreviewer(delay: .milliseconds(80)),
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: JobStore(fileURL: root.appendingPathComponent("preview-jobs.json")),
       previewDebounce: .zero
     )
@@ -102,7 +103,7 @@ final class EucranteAppTests: XCTestCase {
     try await waitUntil { previewModel.mediaPreview != nil }
     render(SaveView(model: previewModel))
     previewModel.sourceText = "https://youtube.com/watch?v=fixture"
-    try await waitUntil { previewModel.previewMessage != nil }
+    try await waitUntil { previewModel.mediaPreview != nil }
     render(SaveView(model: previewModel))
   }
 
@@ -112,7 +113,7 @@ final class EucranteAppTests: XCTestCase {
       "EucranteCookieTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let dataStore = WKWebsiteDataStore.nonPersistent()
-    let session = YouTubeSessionStore(dataStore: dataStore)
+    let session = SiteSessionStore(dataStore: dataStore)
     let cookie = try XCTUnwrap(
       HTTPCookie(properties: [
         .domain: ".youtube.com",
@@ -130,9 +131,10 @@ final class EucranteAppTests: XCTestCase {
     await setCookie(cookie, in: dataStore)
     await setCookie(unrelated, in: dataStore)
 
-    let authenticated = await session.hasAuthenticatedSession()
+    let authenticated = await session.hasSavedCookies(for: URL(string: "https://youtube.com")!)
     XCTAssertTrue(authenticated)
-    let exportedValue = try await session.exportCookieFile(to: root)
+    let exportedValue = try await session.exportCookieFile(
+      for: URL(string: "https://youtube.com")!, to: root)
     let exported = try XCTUnwrap(exportedValue)
     let text = try String(contentsOf: exported, encoding: .utf8)
     XCTAssertTrue(text.contains("youtube.com"))
@@ -145,9 +147,11 @@ final class EucranteAppTests: XCTestCase {
     ).intValue
     XCTAssertEqual(mode & 0o777, 0o600)
 
-    await session.clear()
-    let authenticatedAfterClear = await session.hasAuthenticatedSession()
-    let exportAfterClear = try await session.exportCookieFile(to: root)
+    await session.clear(for: URL(string: "https://youtube.com")!)
+    let authenticatedAfterClear = await session.hasSavedCookies(
+      for: URL(string: "https://youtube.com")!)
+    let exportAfterClear = try await session.exportCookieFile(
+      for: URL(string: "https://youtube.com")!, to: root)
     XCTAssertFalse(authenticatedAfterClear)
     XCTAssertNil(exportAfterClear)
   }
@@ -194,7 +198,8 @@ final class EucranteAppTests: XCTestCase {
   }
 
   @MainActor
-  func testLinkPreviewDebouncesCancelsStaleResultsAndRequiresYouTubeSession() async throws {
+  func testLinkPreviewDebouncesCancelsStaleResultsAndChecksPublicYouTubeWithoutLogin() async throws
+  {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "EucranteLinkPreviewTests-\(UUID().uuidString)", isDirectory: true)
     let suiteName = "app.eucrante.link-preview.\(UUID().uuidString)"
@@ -208,7 +213,7 @@ final class EucranteAppTests: XCTestCase {
       defaults: defaults,
       localAcquirer: FixtureAcquirer(),
       localPreviewer: previewer,
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: JobStore(fileURL: root.appendingPathComponent("jobs.json")),
       previewDebounce: .milliseconds(5)
     )
@@ -231,10 +236,9 @@ final class EucranteAppTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(resolvedRequestCount, 2)
 
     model.sourceText = "https://youtube.com/watch?v=fixture"
-    try await waitUntil {
-      model.previewMessage?.contains("Sign in to YouTube") == true
-    }
-    XCTAssertNil(model.mediaPreview)
+    try await waitUntil { model.mediaPreview != nil }
+    XCTAssertNil(model.previewMessage)
+    XCTAssertTrue(model.recoverySources.isEmpty)
   }
 
   func testMusicMetadataDraftValidatesNumbersAndBuildsOverrides() throws {
@@ -332,33 +336,35 @@ final class EucranteAppTests: XCTestCase {
     XCTAssertFalse(AppModel.isYouTube(try XCTUnwrap(URL(string: "https://notyoutube.com"))))
   }
 
-  func testEmbeddedSignInNavigationAllowsOnlyRequiredHTTPSDomains() throws {
+  func testEmbeddedSignInNavigationSupportsWebsitesAndBlocksUnsafeSchemes() throws {
     let allowed = [
       "https://youtube.com/account",
       "https://accounts.google.com/signin",
       "https://www.gstatic.com/example",
       "https://lh3.googleusercontent.com/example",
       "https://youtube.googleapis.com/example",
+      "https://instagram.com/accounts/login/",
+      "https://example.com/login",
       "about:blank",
     ]
     for value in allowed {
       XCTAssertTrue(
-        YouTubeNavigationPolicy.allows(try XCTUnwrap(URL(string: value))),
+        SiteNavigationPolicy.allows(try XCTUnwrap(URL(string: value))),
         value
       )
     }
 
     let blocked = [
       "http://youtube.com/account",
-      "https://youtube.com.evil.test/account",
-      "https://google.com.evil.test/signin",
-      "https://example.com/",
+      "https://username:secret@example.com/",
+      "javascript:alert(1)",
+      "about:config",
       "file:///tmp/example",
       "data:text/html,example",
     ]
     for value in blocked {
       XCTAssertFalse(
-        YouTubeNavigationPolicy.allows(try XCTUnwrap(URL(string: value))),
+        SiteNavigationPolicy.allows(try XCTUnwrap(URL(string: value))),
         value
       )
     }
@@ -378,6 +384,7 @@ final class EucranteAppTests: XCTestCase {
     let model = AppModel(
       defaults: defaults,
       localAcquirer: BlockingAcquirer(),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: store
     )
     for _ in 0..<100 where !model.localToolsReady {
@@ -411,7 +418,8 @@ final class EucranteAppTests: XCTestCase {
     XCTAssertTrue(model.musicMetadataDraft.isEmpty)
     XCTAssertEqual(try store.load().first?.id, job.id)
     model.cancel(job.id)
-    XCTAssertEqual(try store.load().first?.state, .cancelled)
+    XCTAssertEqual(try store.load().first?.state, .cancelling)
+    try await waitUntil { model.jobs.first?.state == .cancelled }
     model.removeFromHistory(job.id)
     XCTAssertTrue(try store.load().isEmpty)
   }
@@ -436,7 +444,7 @@ final class EucranteAppTests: XCTestCase {
     let model = AppModel(
       defaults: defaults,
       localAcquirer: FixtureAcquirer(),
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: store
     )
     try await waitUntil { model.localToolsReady }
@@ -547,9 +555,31 @@ final class EucranteAppTests: XCTestCase {
         || transcodeModel.jobs.first?.state == .failed
     }
     let transcodeJob = try XCTUnwrap(transcodeModel.jobs.first)
-    XCTAssertEqual(transcodeJob.state, .completed, transcodeJob.errorMessage ?? "")
-    XCTAssertEqual(transcodeJob.mediaDecision, .transcodeHEVC)
-    XCTAssertEqual(transcodeJob.progress, 1)
+    XCTAssertEqual(transcodeJob.state, .failed)
+    XCTAssertTrue(transcodeJob.errorMessage?.contains("HEVC") == true)
+    XCTAssertNil(transcodeJob.outputURL)
+
+    let hevc = try await LocalMediaProcessor().process(
+      video, preset: .appleVideoEfficient, suggestedFilename: "HEVC.mp4",
+      destination: root.appendingPathComponent("hevc-fixture"))
+    let verifiedSuite = "app.eucrante.verified-transcode.\(UUID().uuidString)"
+    defer { UserDefaults.standard.removePersistentDomain(forName: verifiedSuite) }
+    let verifiedModel = try branchModel(
+      root: root.appendingPathComponent("verified-transcode"),
+      acquirer: StaticResultAcquirer(
+        result: .transcode(
+          video: hevc.url, audio: nil, suggestedFilename: "Verified.mp4",
+          duration: hevc.output.duration, quality: .best, metadata: metadata)),
+      suiteName: verifiedSuite, videoTranscoder: AppleVideoTranscoder(executable: script))
+    try await waitUntil { verifiedModel.localToolsReady }
+    verifiedModel.sourceText = "https://example.com/verified-transcode"
+    await verifiedModel.submit(preset: .appleVideoBest)
+    try await waitUntil {
+      verifiedModel.jobs.first?.state == .completed || verifiedModel.jobs.first?.state == .failed
+    }
+    XCTAssertEqual(
+      verifiedModel.jobs.first?.state, .completed, verifiedModel.jobs.first?.errorMessage ?? "")
+    XCTAssertEqual(verifiedModel.jobs.first?.mediaDecision, .transcodeHEVC)
 
     let failureModel = try branchModel(
       root: root.appendingPathComponent("failure", isDirectory: true),
@@ -578,7 +608,8 @@ final class EucranteAppTests: XCTestCase {
     await passthroughModel.submit(preset: .custom)
     try await waitUntil { passthroughModel.jobs.first?.state == .completed }
     XCTAssertEqual(passthroughModel.jobs.first?.mediaDecision, .passthrough)
-    XCTAssertEqual(passthroughModel.jobs.first?.outputURL, video)
+    XCTAssertEqual(passthroughModel.jobs.first?.outputURL?.lastPathComponent, "Original.mp4")
+    XCTAssertNotEqual(passthroughModel.jobs.first?.outputURL, video)
 
     let cancellationModel = try branchModel(
       root: root.appendingPathComponent("cancellation", isDirectory: true),
@@ -621,7 +652,7 @@ final class EucranteAppTests: XCTestCase {
     let model = AppModel(
       defaults: defaults,
       localAcquirer: UnavailableAcquirer(),
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: store
     )
     try await waitUntil { model.jobs.count == 2 }
@@ -635,7 +666,7 @@ final class EucranteAppTests: XCTestCase {
   }
 
   @MainActor
-  func testYouTubeSessionGateRetainsLinkAndSignOutCancelsActiveSave() async throws {
+  func testPublicYouTubeDoesNotRequireLoginAndSignOutCancelsActiveSave() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("EucranteAppYouTubeTests-\(UUID().uuidString)", isDirectory: true)
     let suiteName = "app.eucrante.youtube-tests.\(UUID().uuidString)"
@@ -644,11 +675,11 @@ final class EucranteAppTests: XCTestCase {
       defaults.removePersistentDomain(forName: suiteName)
       try? FileManager.default.removeItem(at: root)
     }
-    let session = TestYouTubeSessionStore(authenticated: false)
+    let session = TestSiteSessionStore(authenticated: false)
     let model = AppModel(
       defaults: defaults,
       localAcquirer: BlockingAcquirer(),
-      youtubeSessionStore: session,
+      siteSessionStore: session,
       jobStore: JobStore(fileURL: root.appendingPathComponent("jobs.json"))
     )
     try await waitUntil { model.localToolsReady }
@@ -657,20 +688,18 @@ final class EucranteAppTests: XCTestCase {
 
     await model.submit(preset: .appleVideoBest)
 
-    XCTAssertTrue(model.showingYouTubeSignIn)
-    XCTAssertEqual(model.sourceText, source)
-    XCTAssertTrue(model.jobs.isEmpty)
+    XCTAssertFalse(model.showingSiteSignIn)
+    XCTAssertEqual(model.sourceText, "")
+    XCTAssertEqual(model.jobs.count, 1)
     session.authenticated = true
-    await model.refreshYouTubeSession()
-    XCTAssertTrue(model.youtubeSessionReady)
+    await model.refreshSiteSession()
+    XCTAssertEqual(model.siteStatuses[MediaSite(URL(string: source)!)], .saved)
 
-    model.showingYouTubeSignIn = false
-    await model.submit(preset: .appleVideoBest)
     let jobID = try XCTUnwrap(model.jobs.first?.id)
     try await waitUntil { model.jobs.first?.state == .downloading }
-    await model.signOutOfYouTube()
+    await model.signOut(of: MediaSite(URL(string: "https://youtube.com")!))
 
-    XCTAssertFalse(model.youtubeSessionReady)
+    XCTAssertFalse((model.siteStatuses[MediaSite(URL(string: "https://youtube.com")!)] != nil))
     XCTAssertEqual(session.clearCount, 1)
     XCTAssertEqual(model.jobs.first { $0.id == jobID }?.state, .cancelled)
   }
@@ -702,7 +731,7 @@ final class EucranteAppTests: XCTestCase {
     let model = AppModel(
       defaults: defaults,
       localAcquirer: UnavailableAcquirer(),
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: store
     )
     try await waitUntil { model.jobs.count == 2 }
@@ -725,11 +754,11 @@ final class EucranteAppTests: XCTestCase {
     model.musicMetadataDraft.title = "Temporary"
     model.clearMusicMetadata()
     XCTAssertTrue(model.musicMetadataDraft.isEmpty)
-    model.openYouTubeSignIn()
-    XCTAssertTrue(model.showingYouTubeSignIn)
-    model.finishYouTubeSignIn()
+    model.openSiteSignIn()
+    XCTAssertTrue(model.showingSiteSignIn)
+    model.finishSiteSignIn()
     try await Task.sleep(for: .milliseconds(30))
-    XCTAssertFalse(model.youtubeSessionReady)
+    XCTAssertFalse((model.siteStatuses[MediaSite(URL(string: "https://youtube.com")!)] != nil))
 
     model.handleIncomingURL(
       URL(string: "eucrante://save?url=https%3A%2F%2Fexample.com%2Fshared")!)
@@ -772,6 +801,10 @@ final class EucranteAppTests: XCTestCase {
   private func render<V: View>(_ view: V) {
     let size = NSSize(width: 1_280, height: 800)
     let hostingView = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+    let window = NSWindow(
+      contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .resizable],
+      backing: .buffered, defer: false)
+    window.contentView = hostingView
     hostingView.frame = NSRect(origin: .zero, size: size)
     hostingView.layoutSubtreeIfNeeded()
     hostingView.displayIfNeeded()
@@ -797,7 +830,7 @@ final class EucranteAppTests: XCTestCase {
       defaults: defaults,
       localAcquirer: acquirer,
       videoTranscoder: videoTranscoder,
-      youtubeSessionStore: TestYouTubeSessionStore(authenticated: false),
+      siteSessionStore: TestSiteSessionStore(authenticated: false),
       jobStore: JobStore(fileURL: root.appendingPathComponent("jobs.json"))
     )
   }
@@ -986,7 +1019,7 @@ private actor FixturePreviewer: LocalMediaPreviewing {
 }
 
 @MainActor
-private final class TestYouTubeSessionStore: YouTubeSessionStoring {
+private final class TestSiteSessionStore: SiteSessionStoring {
   var authenticated: Bool
   private(set) var clearCount = 0
 
@@ -994,11 +1027,15 @@ private final class TestYouTubeSessionStore: YouTubeSessionStoring {
     self.authenticated = authenticated
   }
 
-  func hasAuthenticatedSession() async -> Bool { authenticated }
+  func hasSavedCookies(for source: URL) async -> Bool { authenticated }
 
-  func exportCookieFile(to _: URL) async throws -> URL? { nil }
+  func exportCookieFile(for source: URL, to directory: URL) async throws -> URL? {
+    guard authenticated else { return nil }
+    return try SecureCredentialFile.write(
+      Data("# Test session".utf8), named: ".eucrante-youtube-cookies.txt", to: directory)
+  }
 
-  func clear() async {
+  func clear(for source: URL) async {
     authenticated = false
     clearCount += 1
   }

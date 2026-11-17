@@ -33,7 +33,10 @@ public struct MediaPreview: Equatable, Sendable {
           || $0.container?.lowercased() == "m4a")
     }
     let audioOnly = formats.filter { $0.hasAudio && !$0.hasVideo }
-    let available = appleAudio.isEmpty ? audioOnly : appleAudio
+    let combined = formats.filter {
+      $0.hasAudio && $0.hasVideo && $0.audioCodec?.lowercased().hasPrefix("mp4a") == true
+    }
+    let available = appleAudio.isEmpty ? (audioOnly.isEmpty ? combined : audioOnly) : appleAudio
     let capped =
       maximumBitrate.map { limit in
         available.filter {
@@ -43,12 +46,21 @@ public struct MediaPreview: Equatable, Sendable {
     guard let selected = (capped.isEmpty ? available : capped).max(by: Self.lowerQuality) else {
       return nil
     }
-    let bitrate = selected.audioBitrate ?? selected.totalBitrate
-    let size = selected.byteCount(duration: duration)
+    let bitrate = selected.audioBitrate ?? (selected.hasVideo ? nil : selected.totalBitrate)
+    let size: (value: Int64?, estimated: Bool)
+    if selected.hasVideo {
+      // A combined file's size includes the video; never present it as exact audio size.
+      let estimate = bitrate.flatMap { rate in
+        duration.flatMap { Int64(exactly: ($0 * rate * 125).rounded(.down)) }
+      }
+      size = (estimate, true)
+    } else {
+      size = selected.byteCount(duration: duration)
+    }
     return PresetOutputPreview(
       codec: Self.audioCodecName(selected.audioCodec),
       container: "M4A",
-      quality: bitrate.map { "\(Int($0.rounded())) kbps" },
+      quality: bitrate.flatMap { Int(exactly: $0.rounded()) }.map { "\($0) kbps" },
       estimatedByteCount: size.value,
       sizeIsEstimate: size.estimated
     )
@@ -76,16 +88,19 @@ public struct MediaPreview: Equatable, Sendable {
     let videoSize = video.byteCount(duration: duration)
     let audioSize: (value: Int64?, estimated: Bool) =
       audio?.byteCount(duration: duration) ?? (nil, true)
-    let totalSize = [videoSize.value, audioSize.value].compactMap { $0 }.reduce(0, +)
+    let sum = (videoSize.value ?? 0).addingReportingOverflow(audioSize.value ?? 0)
+    let totalSize = sum.overflow ? nil : (sum.partialValue > 0 ? sum.partialValue : nil)
     let resolution = video.height.map { height in
-      let fps = video.frameRate.flatMap { $0 >= 1 ? " · \(Int($0.rounded())) fps" : nil } ?? ""
+      let fps =
+        video.frameRate.flatMap { Int(exactly: $0.rounded()) }
+        .flatMap { $0 >= 1 ? " · \($0) fps" : nil } ?? ""
       return "\(height)p\(fps)"
     }
     return PresetOutputPreview(
       codec: requiresHEVC ? "HEVC" : Self.videoCodecName(video.videoCodec),
       container: "MP4",
       quality: resolution,
-      estimatedByteCount: totalSize > 0 ? totalSize : nil,
+      estimatedByteCount: totalSize,
       sizeIsEstimate: requiresHEVC || videoSize.estimated || audioSize.estimated
     )
   }
@@ -166,7 +181,7 @@ public struct MediaPreviewFormat: Equatable, Sendable {
     guard let duration, duration > 0, let bitrate = totalBitrate ?? audioBitrate, bitrate > 0 else {
       return (nil, true)
     }
-    return (Int64(duration * bitrate * 1_000 / 8), true)
+    return (Int64(exactly: (duration * bitrate * 1_000 / 8).rounded(.down)), true)
   }
 }
 

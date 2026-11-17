@@ -1,0 +1,103 @@
+name: Harbor Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing pushed version tag (v followed by the app version)'
+        required: true
+        type: string
+      channel:
+        description: 'Release policy'
+        required: true
+        type: choice
+        default: preview
+        options: [preview, verified]
+      create_draft:
+        description: 'Create a GitHub draft for review after validation; never publish it'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harbor-release-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  HARBOR_TAG: ${{ inputs.tag || github.ref_name }}
+  HARBOR_CHANNEL: ${{ inputs.channel || 'preview' }}
+
+jobs:
+  prepare:
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: harbor-release
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.HARBOR_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify native runner and release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(uname -m)" = arm64
+          python3 HarborIntegration/release.py check --tag "$HARBOR_TAG"
+
+      - name: Import Developer ID certificate for verified releases
+        if: env.HARBOR_CHANNEL == 'verified'
+        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      - name: Configure notarization in the runner Keychain
+        if: env.HARBOR_CHANNEL == 'verified'
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: python3 HarborIntegration/ci-notary-profile.py
+      - name: Build and prepare Harbor assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HARBOR_CODESIGN_IDENTITY: ${{ env.HARBOR_CHANNEL == 'verified' && vars.APPLE_CODESIGN_IDENTITY || '-' }}
+          HARBOR_NOTARY_PROFILE: HarborCI
+          HARBOR_SPARKLE_FEED_URL: ${{ vars.HARBOR_SPARKLE_FEED_URL }}
+          HARBOR_SPARKLE_PUBLIC_KEY: ${{ vars.HARBOR_SPARKLE_PUBLIC_KEY }}
+        run: python3 HarborIntegration/release.py prepare --tag "$HARBOR_TAG" --channel "$HARBOR_CHANNEL" --output HarborIntegration/output/release
+      - name: Retain reviewable release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: harbor-release-${{ env.HARBOR_TAG }}
+          path: HarborIntegration/output/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    if: github.event_name == 'workflow_dispatch' && inputs.create_draft
+    needs: prepare
+    runs-on: macos-26
+    environment: harbor-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.HARBOR_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download prepared release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: harbor-release-${{ env.HARBOR_TAG }}
+          path: HarborIntegration/output/release/
+      - name: Create and verify a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 HarborIntegration/release.py draft --output HarborIntegration/output/release

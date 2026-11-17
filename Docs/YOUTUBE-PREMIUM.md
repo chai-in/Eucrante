@@ -8,10 +8,10 @@ This design replaced the Cloudflare experiment. Testing showed that authenticate
 
 ## Current behavior
 
-- The private in-app session is off by default and required only for YouTube saves.
+- Public links are attempted without a login gate. YouTube can use a saved private session for account-restricted formats; an actual authentication failure offers Reconnect and rechecks affected work afterward.
 - Eucrante does not request Files & Folders access to Brave, Safari, Chrome, Firefox, or another browser.
-- The session persists in Eucrante's own WebKit store until the user chooses **Sign Out of Eucrante**.
-- Per-job cookie exports are created only for YouTube jobs inside mode-`0700` directories, use mode `0600` before any bytes are written, and are deleted immediately after acquisition succeeds or fails.
+- The session persists in Eucrante's own WebKit store until the user chooses **Remove Session** for YouTube.
+- Per-job cookie exports contain only the selected website's applicable cookies inside mode-`0700` directories, use mode `0600` before any bytes are written, and are deleted immediately after acquisition succeeds or fails.
 - Premium may expose higher-bitrate audio or authenticated formats, but not every video has a distinct “Premium” 1080p entry.
 - Through 1080p, Eucrante selects H.264 plus AAC and merges locally without re-encoding. For 1440p/4K it prefers VP9 and converts locally to Apple-native HEVC while copying AAC.
 - DRM-protected media remains out of scope.

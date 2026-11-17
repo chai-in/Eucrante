@@ -12,6 +12,7 @@ let package = Package(
     .executable(name: "Eucrante", targets: ["EucranteApp"]),
     .executable(name: "EucranteCoreChecks", targets: ["EucranteCoreChecks"]),
   ],
+  dependencies: [.package(name: "HarborSDK", path: "HarborIntegration/SDK")],
   targets: [
     .target(
       name: "EucranteCore",
@@ -24,7 +25,8 @@ let package = Package(
     ),
     .executableTarget(
       name: "EucranteApp",
-      dependencies: ["EucranteCore"],
+      dependencies: ["EucranteCore", .product(name: "HarborKit", package: "HarborSDK")],
+      resources: [.copy("Resources/PagePicker.js")],
       linkerSettings: [
         .linkedFramework("UserNotifications"),
         .linkedFramework("WebKit"),

@@ -4,7 +4,7 @@
 
 - Native SwiftUI app shell and four Apple-oriented one-click policies.
 - Local pinned `yt-dlp`, Deno, and reproducibly built LGPL FFmpeg helper installation, embedding, and nested code signing.
-- Private in-app YouTube session with no external-browser dependency, required only for YouTube saves.
+- Private website sessions with no external-browser dependency, proactive authentication recovery, and public-link checks without a login gate.
 - Lossless local H.264 + AAC through 1080p, plus VP9-to-Apple-VideoToolbox-HEVC for verified 4K SDR output.
 - AVFoundation inspection, output verification, cancellation, queue/history, Finder, Trash, notifications, and Music import.
 - Exact local YouTube end-to-end developer check.

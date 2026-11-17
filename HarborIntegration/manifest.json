@@ -1,0 +1,30 @@
+{
+  "appID" : "eucrante",
+  "architecture" : "arm64",
+  "bundleIdentifier" : "app.eucrante.client",
+  "minimumOS" : "14.0",
+  "permissions" : [
+    {
+      "kind" : "files",
+      "limitedAccess" : "Use a folder you can already access.",
+      "reason" : "Choose where finished downloads are saved.",
+      "steps" : "Open Eucrante and choose a destination folder in Settings. Use the system folder picker.",
+      "title" : "Save location"
+    },
+    {
+      "kind" : "notifications",
+      "limitedAccess" : "Follow download progress in Eucrante without notifications.",
+      "reason" : "Optional alerts when a download finishes.",
+      "steps" : "Enable completion notifications in Eucrante. Approve its own macOS prompt, or adjust Eucrante in Notifications settings.",
+      "title" : "Download notifications"
+    },
+    {
+      "kind" : "automation",
+      "limitedAccess" : "Save audio to a folder and import it yourself.",
+      "reason" : "Optional permission to send a finished audio file to Music.",
+      "steps" : "Choose Import to Music for a finished file in Eucrante. Approve the prompt for Eucrante controlling Music.",
+      "title" : "Import to Music"
+    }
+  ],
+  "schema" : 1
+}
