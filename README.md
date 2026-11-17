@@ -10,13 +10,15 @@ The app uses a bundled, signed `yt-dlp` executable for provider extraction, a bu
 
 ## Current product
 
-- Four one-click Apple output policies: Music — Best, Music — Efficient, Video — Best, and Video — Efficient.
-- Local YouTube downloads with a private YouTube sign-in inside Eucrante; no sign-in is needed for other supported providers.
+- Safari Favorites page picker with verified items, hover details, time ranges and editable square covers.
+- Four review-before-save Apple output policies: Music — Best, Music — Efficient, Video — Best, and Video — Efficient.
+- Private website sessions for YouTube, Instagram, TikTok and other supported sites, with automatic detection of authentication failures and rechecking after reconnecting. Public links do not require a login.
 - YouTube Premium formats are requested from the same app and Mac network context; Eucrante never reads another browser's files.
 - H.264 through 1080p is merged with AAC locally without generation loss.
 - 1440p and 4K VP9 sources are converted locally to Apple-native HEVC/H.265 with VideoToolbox hardware acceleration when available and Apple's software fallback otherwise; compatible AAC is copied without another lossy audio encode.
-- Finished files are inspected before the job is marked complete.
-- Local queue/history, cancellation, retry, custom output folder, Finder reveal, Trash, notifications, and explicit Music import.
+- Finished files are inspected before completion; audio is decoded to check sound and timing, and malformed M4A timelines are repaired without re-encoding.
+- FIFO queue with pause/resume, search, status filters, cancellation, retry, custom output folder, Finder reveal, Trash, notifications, and explicit Music import.
+- Each save retains its chosen settings and output folder, including after a relaunch or retry.
 - Filename-style previews in Settings that match the actual saved names.
 - No analytics or advertising SDKs.
 
@@ -24,7 +26,7 @@ Eucrante does not bypass DRM or access controls. Use it only for media you own o
 
 ## Build
 
-Requirements: macOS 14 or newer, full Xcode, and the Swift 6 toolchain. `make app` creates a native bundle for the build Mac and verifies that every bundled helper supports that architecture; release archives declare their architecture explicitly.
+Requirements: an Apple silicon Mac running macOS 14 or newer, full Xcode, and the Swift 6 toolchain. Eucrante supports arm64 only. Run the build natively, outside Rosetta. `make app` builds and verifies an arm64 bundle before replacing the previous local build.
 
 ```sh
 swift test -Xswiftc -warnings-as-errors
@@ -34,6 +36,8 @@ make app
 ```
 
 `make app` downloads the exact pinned helper releases, verifies their SHA-256 checksums, builds FFmpeg 9.0.1 from its verified official source with GPL and non-free components disabled, embeds the tools under `Eucrante.app/Contents/Resources/Tools`, signs the nested executables, and then signs the app. Development copies live only under `.build/eucrante-tools` and are not committed.
+
+`make preview` opens a Debug build with disposable history, generated audio fixtures, and a non-persistent website session. Media acquisition uses local fixtures and does not open the normal app library. Opening a website session still contacts that website in the temporary browser. Release builds do not include the fixture mode.
 
 For the opt-in live YouTube check:
 
@@ -65,11 +69,12 @@ shasum -a 256 -c Eucrante-*.dmg.sha256
 
 If Developer ID and notarization become available later, stable releases will use notarized DMG and ZIP artifacts that open normally. Homebrew Cask support remains deferred until then because Homebrew does not replace Apple signing or notarization.
 
-The project website is deployed as Cloudflare Workers Static Assets. Its Cloudflare build runs `npm run build` before `npx wrangler deploy`. Native app checks remain local because Eucrante requires macOS, AppKit, AVFoundation, and Xcode, which are unavailable in Cloudflare's Linux build image.
+The project website is deployed as Cloudflare Workers Static Assets. Its Cloudflare build runs `npm run build` to create validated, fingerprinted assets in `dist/site` before `npx wrangler deploy`. Fingerprinted resources use immutable browser caching; HTML revalidates on each visit. Native app checks remain local because Eucrante requires macOS, AppKit, AVFoundation, and Xcode, which are unavailable in Cloudflare's Linux build image.
 
 ## Architecture and product notes
 
 - [Architecture](Docs/ARCHITECTURE.md)
+- [Performance and resource usage](Docs/PERFORMANCE.md)
 - [Product contract](Docs/PRODUCT.md)
 - [Preset policies](Docs/PRESETS.md)
 - [YouTube Premium boundary](Docs/YOUTUBE-PREMIUM.md)

@@ -17,6 +17,7 @@ struct AppShellView: View {
     NavigationSplitView {
       List(Section.allCases, selection: $selection) { section in
         Label(section.rawValue, systemImage: section.icon)
+          .badge(section == .queue ? model.activeJobs.count : 0)
           .tag(section)
       }
       .navigationTitle("Eucrante")
@@ -30,6 +31,33 @@ struct AppShellView: View {
       }
     }
     .tint(.eucranteAccent)
+    .onChange(of: model.focusRequestID) { selection = .save }
+    .sheet(
+      item: $model.presentedSheet,
+      onDismiss: {
+        Task { if !model.showingPagePicker { await model.pagePicker.stop() } }
+      }
+    ) { sheet in
+      switch sheet {
+      case .website: SiteSignInView(model: model)
+      case .picker: PagePickerView(model: model, picker: model.pagePicker)
+      }
+    }
+    .safeAreaInset(edge: .top) {
+      if !model.recoverySources.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(model.recoverySources.keys.sorted { $0.host < $1.host }) { site in
+            HStack {
+              Label(
+                "\(site.name) requires a fresh sign-in. Affected saves are waiting.",
+                systemImage: "person.crop.circle.badge.exclamationmark")
+              Spacer()
+              Button("Reconnect \(site.name)") { model.openSiteSignIn(model.recoverySources[site]) }
+            }
+          }
+        }.font(.callout).padding(12).background(.bar)
+      }
+    }
     .toolbar {
       ToolbarItem {
         SettingsLink {
@@ -38,7 +66,8 @@ struct AppShellView: View {
       }
     }
     .safeAreaInset(edge: .bottom) {
-      if let job = model.activeJobs.first {
+      if let job = model.activeJobs.first(where: { $0.state != .queued }) ?? model.activeJobs.first
+      {
         activeDownloadBar(job)
       } else if let status = model.statusMessage {
         HStack(spacing: 10) {
@@ -63,7 +92,7 @@ struct AppShellView: View {
       }
     }
     .alert(
-      "Couldn’t Save",
+      "Eucrante",
       isPresented: Binding(
         get: { model.errorMessage != nil },
         set: { if !$0 { model.errorMessage = nil } }
@@ -129,8 +158,15 @@ struct AppShellView: View {
 
         Button("Queue") { selection = .queue }
           .buttonStyle(.bordered)
-        Button("Cancel", role: .cancel) { model.cancel(job.id) }
-          .buttonStyle(.bordered)
+        Button {
+          model.cancel(job.id)
+        } label: {
+          Image(systemName: "xmark.circle")
+        }
+        .buttonStyle(.borderless)
+        .disabled(job.state == .cancelling)
+        .help("Cancel save")
+        .accessibilityLabel("Cancel save")
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 11)

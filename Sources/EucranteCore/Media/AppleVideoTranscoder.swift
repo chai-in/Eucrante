@@ -68,12 +68,19 @@ public actor AppleVideoTranscoder {
     }
     process.terminationHandler = { _ in termination.signal() }
     let running = CancellableProcess(process)
+    defer {
+      processPipe.fileHandleForReading.readabilityHandler = nil
+      try? processPipe.fileHandleForWriting.close()
+      _ = reader.finish(reading: processPipe.fileHandleForReading)
+    }
 
     do {
       try await withTaskCancellationHandler {
         try Task.checkCancellation()
         do {
-          try process.run()
+          try running.start()
+        } catch is CancellationError {
+          throw CancellationError()
         } catch {
           processPipe.fileHandleForReading.readabilityHandler = nil
           _ = reader.finish(reading: processPipe.fileHandleForReading)
@@ -85,6 +92,10 @@ public actor AppleVideoTranscoder {
         processPipe.fileHandleForReading.readabilityHandler = nil
         let diagnosticLines = reader.finish(reading: processPipe.fileHandleForReading)
         try Task.checkCancellation()
+        guard !reader.exceededLimit else {
+          throw AppleVideoTranscodeError.failed(
+            "The converter produced too much diagnostic output.")
+        }
         guard process.terminationReason == .exit, process.terminationStatus == 0 else {
           throw AppleVideoTranscodeError.failed(
             diagnosticLines.filter { Self.parseProgressTime($0) == nil }.suffix(20)

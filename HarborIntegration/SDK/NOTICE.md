@@ -1,0 +1,1 @@
+Harbor SDK source snapshot. Harbor-authored integration code is incorporated into the host app under that repository’s licensing terms. The CArchive headers retain their original BSD copyright and license notices. Canonical source and snapshot identity are recorded in ../sdk-lock.json. No Sparkle dependency is included in this SDK.

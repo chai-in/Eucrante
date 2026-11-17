@@ -1,0 +1,15 @@
+{
+  "appID": "eucrante",
+  "appPath": "dist/Eucrante.app",
+  "architecture": "arm64",
+  "buildCommand": [
+    "./Scripts/build-app.sh",
+    "release"
+  ],
+  "bundleIdentifier": "app.eucrante.client",
+  "minimumOS": "14.0",
+  "name": "Eucrante",
+  "runner": "macos-26",
+  "schema": 1,
+  "signingEnvironment": "CODESIGN_IDENTITY"
+}

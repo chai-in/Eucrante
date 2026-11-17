@@ -1,4 +1,4 @@
-.PHONY: check test coverage cloudflare-check build app dmg-development dmg-public verify-app notarize publish-source-release publish-public-dmg-release publish-release clean
+.PHONY: check test coverage cloudflare-check build app preview dmg-development dmg-public verify-app notarize publish-source-release publish-public-dmg-release publish-release clean
 
 check:
 	zsh -n Scripts/*.sh
@@ -19,6 +19,10 @@ build:
 
 app:
 	./Scripts/build-app.sh release
+
+preview:
+	./Scripts/build-app.sh debug
+	open -n dist/Eucrante.app --args --ui-preview
 
 dmg-development: app
 	./Scripts/create-dmg.sh development

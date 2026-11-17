@@ -1,0 +1,6 @@
+/SDK/.build/
+/SDK/.swiftpm/
+/output/
+/work/
+__pycache__/
+*.pyc

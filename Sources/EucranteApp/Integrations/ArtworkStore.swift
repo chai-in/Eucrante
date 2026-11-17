@@ -1,6 +1,7 @@
-import AppKit
 import EucranteCore
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 enum ArtworkStore {
   static let maximumSourceBytes = 10 * 1_024 * 1_024
@@ -8,6 +9,8 @@ enum ArtworkStore {
   static func persist(
     selectedURL: URL,
     jobID: UUID,
+    style: CoverStyle = .original,
+    removeBlackBars: Bool = true,
     rootDirectory: URL = defaultRootDirectory
   ) throws -> URL {
     let access = selectedURL.startAccessingSecurityScopedResource()
@@ -24,7 +27,10 @@ enum ArtworkStore {
       throw ArtworkStoreError.invalidImage
     }
     let data = try Data(contentsOf: selectedURL, options: .mappedIfSafe)
-    guard let normalized = ArtworkNormalizer.jpegData(from: data) else {
+    guard
+      let normalized = ArtworkNormalizer.jpegData(
+        from: data, style: style, removeBlackBars: removeBlackBars)
+    else {
       throw ArtworkStoreError.invalidImage
     }
     return try persist(normalizedJPEG: normalized, jobID: jobID, rootDirectory: rootDirectory)
@@ -33,18 +39,16 @@ enum ArtworkStore {
   static func cacheProviderArtwork(
     from url: URL,
     jobID: UUID,
+    style: CoverStyle = .original,
+    removeBlackBars: Bool = true,
     rootDirectory: URL = defaultRootDirectory
   ) async -> URL? {
     guard url.scheme?.lowercased() == "https" else { return nil }
     do {
-      var request = URLRequest(url: url)
-      request.timeoutInterval = 15
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard data.count > 0, data.count <= maximumSourceBytes,
-        let http = response as? HTTPURLResponse,
-        (200..<300).contains(http.statusCode),
-        http.mimeType?.lowercased().hasPrefix("image/") == true,
-        let normalized = ArtworkNormalizer.jpegData(from: data)
+      let data = try await download(from: url)
+      guard
+        let normalized = ArtworkNormalizer.jpegData(
+          from: data, style: style, removeBlackBars: removeBlackBars)
       else { return nil }
       return try persist(
         normalizedJPEG: normalized,
@@ -56,9 +60,43 @@ enum ArtworkStore {
     }
   }
 
+  private static let session: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.urlCache = nil
+    configuration.httpCookieStorage = nil
+    configuration.urlCredentialStorage = nil
+    configuration.timeoutIntervalForRequest = 15
+    configuration.timeoutIntervalForResource = 30
+    return URLSession(configuration: configuration)
+  }()
+
+  static func download(from url: URL, session: URLSession = session) async throws -> Data {
+    guard url.scheme?.lowercased() == "https" else { throw ArtworkStoreError.invalidImage }
+    let (bytes, response) = try await session.bytes(from: url)
+    // Also cancel on header rejection, oversized chunked responses, and task cancellation.
+    defer { bytes.task.cancel() }
+    guard let http = response as? HTTPURLResponse,
+      http.url?.scheme?.lowercased() == "https",
+      (200..<300).contains(http.statusCode),
+      http.mimeType?.lowercased().hasPrefix("image/") == true,
+      response.expectedContentLength <= Int64(maximumSourceBytes)
+    else { throw ArtworkStoreError.invalidImage }
+    var data = Data()
+    data.reserveCapacity(Int(max(0, response.expectedContentLength)))
+    for try await byte in bytes {
+      guard data.count < maximumSourceBytes else { throw ArtworkStoreError.invalidImage }
+      data.append(byte)
+    }
+    try Task.checkCancellation()
+    guard !data.isEmpty else { throw ArtworkStoreError.invalidImage }
+    return data
+  }
+
   private static func persist(
     normalizedJPEG: Data,
     jobID: UUID,
+    style: CoverStyle = .original,
+    removeBlackBars: Bool = true,
     rootDirectory: URL
   ) throws -> URL {
     let directory = rootDirectory.appendingPathComponent(jobID.uuidString, isDirectory: true)
@@ -71,6 +109,8 @@ enum ArtworkStore {
 
   static func remove(
     jobID: UUID,
+    style: CoverStyle = .original,
+    removeBlackBars: Bool = true,
     rootDirectory: URL = defaultRootDirectory,
     fileManager: FileManager = .default
   ) {
@@ -101,16 +141,34 @@ enum ArtworkStore {
 }
 
 enum ArtworkNormalizer {
-  static func jpegData(from data: Data) -> Data? {
+  static let maximumPixelSize = 2_048
+
+  static func jpegData(from data: Data, style: CoverStyle = .original, removeBlackBars: Bool = true)
+    -> Data?
+  {
     guard !data.isEmpty, data.count <= ArtworkStore.maximumSourceBytes,
-      let image = NSImage(data: data),
-      let tiff = image.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: tiff)
+      let source = CGImageSourceCreateWithData(
+        data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+      let image = CGImageSourceCreateThumbnailAtIndex(
+        source, 0,
+        [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+          kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+          kCGImageSourceShouldCacheImmediately: true,
+        ] as CFDictionary)
     else { return nil }
-    return bitmap.representation(
-      using: .jpeg,
-      properties: [.compressionFactor: 0.95]
-    )
+    guard let rendered = CoverRenderer.render(image, style: style, removeBlackBars: removeBlackBars)
+    else { return nil }
+    let output = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(
+        output, UTType.jpeg.identifier as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(
+      destination, rendered, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else { return nil }
+    return output as Data
   }
 }
 

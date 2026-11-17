@@ -3,37 +3,44 @@ import EucranteCore
 @preconcurrency import WebKit
 
 @MainActor
-protocol YouTubeSessionStoring: AnyObject {
-  func hasAuthenticatedSession() async -> Bool
-  func exportCookieFile(to directory: URL) async throws -> URL?
-  func clear() async
+protocol SiteSessionStoring: AnyObject {
+  var websiteDataStore: WKWebsiteDataStore? { get }
+  func hasSavedCookies(for source: URL) async -> Bool
+  func exportCookieFile(for source: URL, to directory: URL) async throws -> URL?
+  func clear(for source: URL) async
+}
+
+extension SiteSessionStoring {
+  var websiteDataStore: WKWebsiteDataStore? { nil }
 }
 
 @MainActor
-final class YouTubeSessionStore: YouTubeSessionStoring {
+final class SiteSessionStore: SiteSessionStoring {
   private let dataStore: WKWebsiteDataStore
+  var websiteDataStore: WKWebsiteDataStore? { dataStore }
 
   init(dataStore: WKWebsiteDataStore = .default()) {
     self.dataStore = dataStore
   }
 
-  func hasAuthenticatedSession() async -> Bool {
-    let authenticatedNames: Set<String> = [
-      "LOGIN_INFO", "SAPISID", "APISID", "SID", "HSID", "SSID", "__Secure-1PAPISID",
-      "__Secure-3PAPISID", "__Secure-1PSID", "__Secure-3PSID",
-    ]
-    return await cookies().contains { cookie in
-      Self.isYouTube(cookie.domain) && authenticatedNames.contains(cookie.name)
+  func hasSavedCookies(for source: URL) async -> Bool {
+    await cookies().contains {
+      MediaSite(source).acceptsCookie(domain: $0.domain)
+        && ($0.expiresDate.map { $0 > .now } ?? true)
     }
   }
 
-  func exportCookieFile(to directory: URL) async throws -> URL? {
-    let eligible = await cookies().filter { Self.isYouTube($0.domain) }
+  func exportCookieFile(for source: URL, to directory: URL) async throws -> URL? {
+    let eligible = await cookies().filter {
+      MediaSite(source).acceptsCookie(domain: $0.domain)
+        && ($0.expiresDate.map { $0 > .now } ?? true)
+    }
+    try Task.checkCancellation()
     guard !eligible.isEmpty else { return nil }
 
     var lines = [
       "# Netscape HTTP Cookie File",
-      "# Generated temporarily by Eucrante from its private in-app YouTube session.",
+      "# Generated temporarily by Eucrante from its private in-app website session.",
       "# This file is deleted immediately after media acquisition.",
       "",
     ]
@@ -56,21 +63,24 @@ final class YouTubeSessionStore: YouTubeSessionStoring {
     }
 
     guard let contents = String(lines.joined(separator: "\n") + "\n").data(using: .utf8) else {
-      throw YouTubeSessionError.cookieEncoding
+      throw SiteSessionError.cookieEncoding
     }
     return try SecureCredentialFile.write(
       contents,
-      named: ".eucrante-youtube-cookies.txt",
+      named: ".eucrante-site-cookies.txt",
       to: directory
     )
   }
 
-  func clear() async {
+  func clear(for source: URL) async {
     let types = WKWebsiteDataStore.allWebsiteDataTypes()
-    await withCheckedContinuation { continuation in
-      dataStore.removeData(ofTypes: types, modifiedSince: .distantPast) {
-        continuation.resume()
-      }
+    let site = MediaSite(source)
+    let records = await dataStore.dataRecords(ofTypes: types)
+    let matching = records.filter { site.includes(cookieDomain: $0.displayName) }
+    await dataStore.removeData(ofTypes: types, for: matching)
+    // Website records can use a registrable domain for subdomains. Delete exact-site cookies too.
+    for cookie in await cookies() where site.acceptsCookie(domain: cookie.domain) {
+      await dataStore.httpCookieStore.deleteCookie(cookie)
     }
   }
 
@@ -80,11 +90,6 @@ final class YouTubeSessionStore: YouTubeSessionStoring {
     }
   }
 
-  private static func isYouTube(_ domain: String) -> Bool {
-    let normalized = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-    return normalized == "youtube.com" || normalized.hasSuffix(".youtube.com")
-  }
-
   private static func field(_ value: String) -> String {
     value.replacingOccurrences(of: "\t", with: " ")
       .replacingOccurrences(of: "\r", with: " ")
@@ -92,10 +97,10 @@ final class YouTubeSessionStore: YouTubeSessionStoring {
   }
 }
 
-private enum YouTubeSessionError: LocalizedError {
+private enum SiteSessionError: LocalizedError {
   case cookieEncoding
 
   var errorDescription: String? {
-    "Eucrante could not encode its temporary YouTube session."
+    "Eucrante could not encode its temporary website session."
   }
 }
